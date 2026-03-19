@@ -1,30 +1,473 @@
-# Tidal Clip Prototype
+# Tidal Pattern Arranger
 
-Static HTML proof of concept for turning a small Tidal-inspired pattern language into a DAW-style piano roll.
+`Tidal Pattern Arranger` is a static HTML application for exploring a small Tidal-inspired arrangement language in a DAW-style piano-roll view.
 
-## Current State
+The entire app currently lives in `index.html`. There is no build step, no bundler, and no server requirement beyond opening the file in a browser. The parser, arrangement model, transport, Web MIDI integration, and SVG renderer all run in-browser.
 
-The prototype lives in `index.html` and runs without a build step.
+This README documents:
+
+- what the app does
+- how to use the UI
+- what is currently implemented in the parser
+- what the arrangement language means in this project
+- where the implementation intentionally differs from real Tidal
+
+## What The App Does
+
+The app lets you:
+
+- type pattern source into a slide-out editor
+- parse that source into a multi-track arrangement
+- render the arrangement as a piano-roll style SVG view
+- send note output over Web MIDI
+- visually highlight notes as they play instead of using a separate playhead bar
+
+The current language is Tidal-inspired, not a full Tidal interpreter.
+
+## Current UI
+
+The interface is built around four pieces:
+
+### 1. Top Bar
+
+The top bar contains the global transport controls:
+
+- MIDI output selection
+- BPM input
+- Execute Pattern
+- Refresh MIDI
+- Play
+- Stop
+
+### 2. Arrangement View
+
+The main panel shows the arrangement as stacked tracks.
+
+Each track renders:
+
+- its own local pitch range
+- sequence boundaries
+- notes colored by instrument
+
+The arrangement panel height is fixed to the viewport so the legend remains visible at the bottom.
+
+### 3. Pattern Editor Drawer
+
+The pattern editor is a right-side slide-out drawer.
+
+You can open and close it by:
+
+- clicking the vertical handle tab
+- pressing `Ctrl+B` or `Cmd+B`
+
+The drawer is sized to make roughly 80 columns of text comfortable to view.
+
+### 4. Status Footer
+
+The bottom of the drawer shows app status such as:
+
+- render summaries
+- playback status
+- MIDI refresh status
+- parser errors
+
+## How To Use The App
+
+### Open The App
+
+Open `index.html` in a browser.
+
+For MIDI output, use a browser that supports Web MIDI and grant MIDI permissions when prompted.
+
+### Write A Pattern
+
+Use the editor drawer to write arrangement source.
+
+Press:
+
+- `Ctrl+Enter` on Windows/Linux
+- `Cmd+Enter` on macOS
+
+to reparse the source and redraw the arrangement.
+
+### Play The Arrangement
+
+1. Choose a MIDI output from the top bar.
+2. Set BPM.
+3. Press `Play`.
+
+If no MIDI output is selected, the app still performs visual playback highlighting.
+
+Press `Stop` to:
+
+- stop the loop
+- clear highlights
+- send all-notes-off to the selected MIDI output
+
+## Arrangement Language Overview
+
+The current arrangement model has three levels:
+
+1. Track level
+2. Sequence level
+3. Pattern level
+
+### Track Level
+
+Tracks are the vertical lanes in the arrangement view.
+
+Syntax:
+
+```tidal
+track drums {
+  ...
+}
+```
+
+Each `track` block becomes one row in the arrangement panel.
+
+### Sequence Level
+
+Inside a track, time is arranged using `seqP`.
+
+Syntax:
+
+```tidal
+track drums {
+  seqP [
+    patternA,
+    patternB,
+    patternC
+  ]
+}
+```
+
+In the current implementation:
+
+- each `seqP` entry occupies one equal-length step in time
+- the first item starts at step `0`
+- the second item starts at step `1`
+- and so on
+
+This is intentionally simpler than real Tidal `seqP`.
+
+### Pattern Level
+
+Each sequence step contains a pattern expression.
+
+That expression is parsed into simultaneous voices and step-level events.
+
+The most important current pattern container is `stack`.
+
+Syntax:
+
+```tidal
+stack [
+  s "bd cp hh",
+  n "c4 e4 g4" # s "lead"
+]
+```
+
+`stack` means layer these voices together in the same step.
+
+## Core Parser Features
+
+This section describes the parser as it exists today.
+
+### 1. Top-Level Statement Splitting
+
+The parser keeps track of:
+
+- brackets `[]`
+- braces `{}`
+- parentheses `()`
+- quoted strings
+
+This allows it to split source only at valid top-level boundaries instead of breaking nested expressions.
+
+That logic is the basis for:
+
+- top-level statements
+- comma-separated `seqP` items
+- comma-separated `stack` voices
+- repeat suffix parsing
+
+### 2. Line Comments
+
+Tidal-style line comments are supported with `--`.
+
+Example:
+
+```tidal
+track drums {
+  seqP [
+    stack [
+      s "bd cp hh"
+    ] -- first bar
+  ]
+}
+```
+
+Comment stripping preserves quoted strings, so `--` inside a string is not treated as a comment.
+
+### 3. `track` Blocks
+
+Tracks are parsed from:
+
+```tidal
+track name {
+  ...
+}
+```
+
+Track names currently support:
+
+- bare identifiers such as `drums`
+- quoted names such as `"main drums"`
+
+Each parsed track becomes one arrangement row.
+
+### 4. `seqP`
+
+The parser looks for:
+
+```tidal
+seqP [ ... ]
+```
+
+Each top-level comma-separated item inside `seqP` becomes a sequence step after expression expansion.
+
+The current implementation treats `seqP` as a simple time-ordered step container, not as real timed Tidal segments.
+
+### 5. `stack`
+
+`stack` is the main simultaneous-layering construct.
+
+Example:
+
+```tidal
+stack [
+  s "bd cp hh",
+  n "c4 e4 g4" # s "lead"
+]
+```
+
+Inside a `stack`:
+
+- each comma-separated item is treated as a voice
+- all voices share the same time span
+- events from all voices are merged together
+
+### 6. `s "..."` Sound Voices
+
+Sample-style voices are supported with `s`.
+
+Example:
+
+```tidal
+s "bd cp hh bd"
+```
+
+The app treats sound tokens such as `bd`, `cp`, `hh`, `sd`, and similar names as drum-style note lanes mapped to MIDI note numbers.
+
+### 7. `n "..."` Note Voices
+
+Pitched note voices are supported with `n`.
+
+Example:
+
+```tidal
+n "c4 e4 g4 72" # s "superpiano"
+```
+
+The parser supports:
+
+- note names like `c4`
+- accidentals like `f#3`
+- flats like `bb3`
+- numeric MIDI notes like `60`
+
+When used with `# s "name"`, that sound name is used as the instrument label in the arrangement and legend.
+
+### 8. Bracket Subdivision
+
+Bracket groups subdivide the current time span.
+
+Example:
+
+```tidal
+s "[bd hh cp]"
+```
+
+If a span is divided into three items, each item gets one third of that span.
+
+Bracket subdivision works recursively.
+
+Example:
+
+```tidal
+s "[bd [hh hh] cp]"
+```
+
+### 9. Token Repetition With `*`
+
+Token-level repetition is implemented.
+
+Example:
+
+```tidal
+s "bd*4"
+```
+
+This divides the current span into four equal slices and places `bd` in each slice.
+
+This also works on bracket groups.
+
+Example:
+
+```tidal
+s "[bd cp]*2"
+```
+
+### 10. Whole-Pattern Repetition With `*n`
+
+The parser also supports repeating an entire pattern expression.
+
+Example:
+
+```tidal
+stack [
+  s "bd cp hh bd*2"
+]*2
+```
+
+In the current implementation, this repeats the pattern by subdividing the current step into equal repeated slices.
+
+That means:
+
+- `pattern*2` duplicates the whole pattern twice
+- both copies are compressed into the original span
+
+This is useful when you want “repeat this whole stack within the current step”.
+
+If instead you want the same pattern to happen multiple times sequentially as a longer form, use `cat`.
+
+### 11. `cat`
+
+`cat` is now implemented as a sequence-expression helper.
+
+Examples:
+
+```tidal
+cat [p, p]
+```
+
+```tidal
+cat (replicate 4 p)
+```
+
+In this project, `cat` means:
+
+- expand the provided sequence expression into multiple sequence steps
+- preserve one full step per expanded item
+- do not compress those items into one step
+
+This makes `cat` the right tool for “repeat this pattern multiple times in sequence”.
+
+### 12. `replicate`
+
+`replicate` is implemented as a sequence-expression helper.
+
+Example:
+
+```tidal
+replicate 4 p
+```
+
+This expands to four copies of the expression `p`.
+
+`replicate` becomes especially useful when combined with `cat`.
+
+Example:
+
+```tidal
+cat (replicate 4 p)
+```
+
+### 13. `let` Bindings
+
+Top-level and track-local `let` bindings are implemented.
+
+Example:
+
+```tidal
+let p = stack [
+  s "bd cp hh bd*2"
+]
+
+track drums {
+  seqP [
+    cat (replicate 4 p)
+  ]
+}
+```
 
 Current behavior:
 
-- A text area accepts a Tidal-style pattern input.
-- `Ctrl+Enter` / `Cmd+Enter` reparses the input and replaces the current arrangement view.
-- Multiple tracks render top to bottom like a traditional DAW.
-- Multiple instruments render in different colors on the same piano roll.
-- `--` line comments are supported.
-- Empty or fully commented patterns clear the view instead of leaving stale notes behind.
+- `let` names are simple identifiers
+- bindings are expanded in order
+- later expressions can reference earlier bindings
+- bindings currently expand to sequence expressions, not general Tidal values
 
-## Current Language Model
+Track-local bindings also work:
 
-The current direction is:
+```tidal
+track drums {
+  let p = stack [
+    s "bd cp hh"
+  ]
 
-- Keep `stack` for simultaneous layering.
-- Use `track ... { ... }` for vertical DAW lanes.
-- Use `seqP [ ... ]` for linear sequencing within a track.
-- Remove the earlier `clip` implementation.
+  seqP [
+    cat (replicate 2 p)
+  ]
+}
+```
+
+### 14. Fallback Single-Step Parsing
+
+If you do not use `track`, the parser still works.
 
 Example:
+
+```tidal
+stack [
+  s "bd cp hh",
+  n "c4 e4 g4" # s "lead"
+]
+```
+
+This is interpreted as:
+
+- one default track
+- one sequence step
+
+That fallback is useful for quick experiments.
+
+## Examples
+
+### Basic Drum Track
+
+```tidal
+track drums {
+  seqP [
+    stack [
+      s "bd cp hh bd*2"
+    ]
+  ]
+}
+```
+
+### Two-Track Arrangement
 
 ```tidal
 track drums {
@@ -51,84 +494,200 @@ track synth {
 }
 ```
 
-## Supported Syntax In The Prototype
+### Repeating A Pattern In Sequence
 
-This is a proof-of-concept parser, not full Tidal evaluation.
+```tidal
+let p = stack [
+  s "bd cp hh bd*2"
+]
 
-Supported pieces:
+track drums {
+  seqP [
+    cat (replicate 4 p)
+  ]
+}
+```
 
-- `track name { ... }`
-- `seqP [ patternA, patternB, ... ]`
-- `stack [ ... ]`
-- `s "..."` and `n "..."`
-- note names such as `c4`, `f#3`, and numeric MIDI notes like `60`
-- bracket subdivision like `[bd hh cp]`
-- repetition with `*`, such as `bd*4`
-- rests with `~`
-- `--` comments
+### Repeating A Whole Pattern Inside One Step
 
-Important simplifications:
+```tidal
+stack [
+  s "bd cp hh bd*2"
+]*2
+```
 
-- In this prototype, each `seqP` entry occupies one equal-length time slot in its track.
-- Top-level plain `stack [...]` input still works and becomes a default single-track arrangement.
-- The parser does not implement the full Tidal language or runtime semantics.
+### Comments
+
+```tidal
+track drums {
+  seqP [
+    stack [
+      s "bd cp hh"
+    ] -- first step
+  ]
+}
+```
+
+## Rendering Model
+
+The renderer converts parsed arrangement data into an SVG piano roll.
+
+### Track Rendering
+
+Each track:
+
+- gets its own vertical lane
+- computes a local pitch range from its events
+- draws local pitch rows
+- shows sequence boundaries
+
+The track view compresses vertically as more tracks are added so the arrangement panel stays at a fixed height.
+
+### Instrument Colors
+
+Each unique instrument label gets a color from a fixed palette.
+
+These colors are used for:
+
+- note rectangles
+- legend entries
+
+### Sequence Boundaries
+
+Each `seqP` step is outlined in the track view so it reads like an arrangement region.
+
+### Note Labels
+
+Notes render labels when there is enough visual room.
+
+This avoids clutter when many tracks or many dense events are visible at once.
+
+## MIDI Playback
+
+The app includes browser-side Web MIDI support.
+
+### What Happens During Playback
+
+When you press `Play`:
+
+- the app loops the current arrangement
+- it schedules note-on and note-off events
+- the selected MIDI output receives note messages
+- the corresponding note rectangles are highlighted in the SVG
+
+### Highlighting Model
+
+The app deliberately highlights active notes instead of drawing a vertical playhead bar.
+
+This means playback visibility comes from:
+
+- which notes are currently lit
+- which notes are currently sounding
+
+### Drum And Pitch Channels
+
+Current behavior:
+
+- drum-style events are sent on MIDI channel 10
+- other tracks are assigned channels based on track index
+
+This is a pragmatic implementation detail, not a final routing system.
+
+### If No MIDI Device Is Selected
+
+The app still performs visual playback highlighting even if no output is selected.
+
+That makes it possible to inspect timing without external gear.
+
+## Keyboard Shortcuts
+
+- `Ctrl+Enter` / `Cmd+Enter`: execute and rerender the pattern
+- `Ctrl+B` / `Cmd+B`: open or close the pattern editor drawer
+
+## Parser And App Limitations
+
+This is important: the current implementation is intentionally small and is not a full Tidal runtime.
+
+### Not Implemented
+
+The parser does not currently implement:
+
+- full Tidal parsing
+- full operator precedence
+- arbitrary Haskell syntax
+- real Tidal timing semantics for `seqP`
+- full composition/operator coverage
+- Euclidean or advanced Tidal combinators
+- polymetric or polymetric composition semantics
+- named pattern routing and full sound engine behavior
+
+### Important Differences From Real Tidal
+
+1. `seqP` is currently equal-step sequencing.
+   Real Tidal `seqP` is a timed composition primitive.
+
+2. `cat` and `replicate` are currently arrangement helpers.
+   They are implemented to expand into sequence steps in this app’s arrangement model.
+
+3. Whole-pattern `*n` repetition currently compresses repeated copies into the current span.
+   That is useful for this prototype, but not the same as extending arrangement length.
+
+4. `let` bindings are lightweight arrangement-expression bindings, not general Tidal/Haskell bindings.
 
 ## Implementation Notes
 
-- Rendering is done with inline SVG.
-- Drum tokens are mapped to fixed MIDI-note lanes.
-- Pitched note names are converted to MIDI note numbers.
-- The parser is intentionally lightweight and written directly in browser JavaScript.
+Everything is in `index.html`.
 
-## Reference Notes
+Key implementation areas:
 
-These links are useful for aligning the prototype with real Tidal semantics as the language grows.
+- token and top-level splitting
+- stack and event parsing
+- sequence-expression expansion
+- arrangement construction
+- drawer UI
+- SVG rendering
+- Web MIDI transport
 
-### The meaning of `$`
+Useful entry points in the code:
 
-Tidal’s `$` comes from Haskell. It passes the expression on the right into the function on the left and is mainly used to control evaluation order without extra parentheses. The docs also contrast `$` with `#`, where `#` combines patterns rather than just applying a function.
+- `splitTopLevel`: token splitting for space/comma-separated structures
+- `splitRepeat`: repeat suffix detection
+- `extractStackVoices`: stack voice extraction
+- `parseSource`: one pattern expression into events
+- `expandSequenceExpression`: `cat`, `replicate`, and identifier expansion
+- `extractLetBindings`: `let` binding collection
+- `parseArrangement`: full arrangement parsing
+- `renderArrangement`: SVG arrangement renderer
+- `refreshMidiOutputs`: Web MIDI output discovery
+- `startPlayback`: playback scheduling
+- `setDrawerOpen`: editor drawer toggle
 
-Source:
+## Current Design Direction
+
+There is already a `PLAN.md` file in the repo for follow-up language work.
+
+Short version:
+
+- `cat` and `replicate` are now implemented first
+- `ur` is intentionally deferred for later
+- `seqP` likely needs to move closer to actual Tidal semantics over time
+
+## Future Work
+
+Likely next areas:
+
+- add `ur`
+- refine `seqP` timing semantics
+- add more composition helpers
+- improve MIDI routing and channel assignment
+- add viewport zoom and horizontal scroll
+- consider pattern validation and better parser diagnostics
+
+## Reference Material
+
+These references are helpful for aligning the project with real Tidal semantics as it evolves:
 
 - https://tidalcycles.org/docs/innards/meaning_of_dollar/
-
-### Maxwell Tfirn TidalCycles Overview
-
-This post gives a practical explanation of cycles, pattern density, nested bracket rhythm structure, and how `*` changes repetition density inside a cycle. It is a useful musical intuition reference for how sequences fit into a fixed cycle duration.
-
-Source:
-
 - https://maxwelltfirn.com/2017/08/12/tidalcycles/
-
-### Tidal Composition Reference
-
-The composition docs are directly relevant to the current design direction.
-
-- `ur` is described as a long-form composition tool for patterns of patterns.
-- `seqP` is defined as sequencing patterns with explicit start and end times.
-- The docs show `seqP` as a time-oriented composition primitive rather than a layered pattern combinator.
-
-Source:
-
 - https://tidalcycles.org/docs/reference/composition/
-
-### Tidal Accumulation Reference
-
-The accumulation docs are relevant for the layered side of the model.
-
-- `stack` layers patterns so they play simultaneously.
-- `overlay` and `<>` are related superposition tools.
-- `superimpose` and `layer` are useful references for future transformations on top of a base pattern.
-
-Source:
-
 - https://tidalcycles.org/docs/reference/accumulation/
-
-## Design Direction
-
-Likely next steps:
-
-- Move `seqP` closer to actual Tidal semantics by supporting explicit `(start, end, pattern)` tuples.
-- Distinguish arrangement time from pattern-internal cycle time more clearly.
-- Add viewport controls for zoom and horizontal scrolling as track counts and arrangement length increase.
-- Decide whether the prototype should remain Tidal-inspired or try to mirror real Tidal syntax more strictly.
