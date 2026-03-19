@@ -12,6 +12,16 @@ This README documents:
 - what the arrangement language means in this project
 - where the implementation intentionally differs from real Tidal
 
+## Project Goal
+
+This is a **song builder**. The intended workflow is:
+
+1. Write an arrangement in the pattern language
+2. Preview it with Web MIDI playback as you compose
+3. Export a finished MIDI file to take into a DAW for final audio production
+
+Real-time playback is a composition aid, not the end product. The pattern language is inspired by TidalCycles mini-notation — the same notation used by Renoise's [pattrns library](https://renoise.github.io/pattrns/guide/cycles.html) — but the goal here is a visual arrangement tool with MIDI export rather than a live-coding environment.
+
 ## What The App Does
 
 The app lets you:
@@ -784,17 +794,41 @@ Short version:
 
 ## Future Work
 
-Likely next areas:
+### MIDI File Export (next priority)
 
-- add `ur`
-- refine `seqP` timing semantics
-- add more composition helpers
-- improve MIDI routing and channel assignment
-- add viewport zoom and horizontal scroll
-- consider pattern validation and better parser diagnostics
+The arrangement data is already fully computed — MIDI export is primarily a serialization task.
+
+Planned format:
+- MIDI format 1 (one track per arrangement track)
+- 480 PPQ tick resolution
+- BPM written into the tempo track
+- Note-on/note-off events for note tracks
+- CC events for automation tracks
+- Browser download via `Blob` + `URL.createObjectURL` (no server required)
+
+Timing conversion: one arrangement step = 4 beats, so `ticks = event.start × 4 × 480`.
+
+### Mini-Notation Gaps
+
+These features are part of the standard mini-notation spec (see pattrns prior art) and are natural next additions:
+
+- `<c4 e4 g4>` — alternating values, rotating one per cycle repetition
+- `c4|d4|e4` — random choice each cycle
+- `_` — elongation, sustains the previous note into the next step slot
+
+### Language Features (longer term)
+
+- Add `ur`
+- Refine `seqP` timing semantics toward real Tidal semantics
+- Add more composition helpers
+- `midichan` override per voice or CC track
+- Support patterned `ccn` (multiple CC controllers in one expression)
+
+### UI / Rendering
+
+- Viewport zoom and horizontal scroll
+- Pattern validation and better parser diagnostics
 - CC: continuous LFO interpolation between steps (currently discrete)
-- CC: `midichan` override per CC voice
-- CC: support patterned `ccn` (multiple CC numbers in one voice)
 
 ## Reference Material
 
