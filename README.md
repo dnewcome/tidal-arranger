@@ -453,6 +453,95 @@ This is interpreted as:
 
 That fallback is useful for quick experiments.
 
+### 15. CC Automation Tracks
+
+MIDI CC (Control Change) messages can be sent alongside notes using `ccn` and `ccv` inside any track.
+
+`ccn` sets the CC controller number. `ccv` sets the value pattern.
+
+**Stepped pattern:**
+
+```tidal
+track cutoff {
+  seqP [
+    ccn 74 # ccv "0 32 64 96 127 96 64 32"
+  ]
+}
+```
+
+Each token in the `ccv` string is a CC value (0–127) sent at evenly spaced steps within the cycle, following the same subdivision rules as note patterns.
+
+**LFO shapes:**
+
+Instead of a quoted string, `ccv` accepts a parenthesized LFO expression:
+
+```
+ccv (shape steps lo hi)
+```
+
+| shape    | description          |
+|----------|----------------------|
+| `sine`   | smooth sine wave     |
+| `saw`    | rising ramp          |
+| `tri`    | triangle wave        |
+| `square` | two-state on/off     |
+
+`steps` is how many discrete values to generate. `lo` and `hi` are the minimum and maximum CC values.
+
+Example — slow sine sweep on filter cutoff:
+
+```tidal
+track cutoff {
+  seqP [
+    ccn 74 # ccv (sine 16 10 110)
+  ]
+}
+```
+
+Example — sawtooth on resonance:
+
+```tidal
+track resonance {
+  seqP [
+    ccn 71 # ccv (saw 8 0 100)
+  ]
+}
+```
+
+**Multiple CC parameters:**
+
+Use separate tracks or `stack` multiple CC voices:
+
+```tidal
+track modulation {
+  seqP [
+    stack [
+      ccn 74 # ccv (sine 16 10 110),
+      ccn 71 # ccv (tri 8 20 80)
+    ]
+  ]
+}
+```
+
+**Constant value:**
+
+```tidal
+ccn 74 # ccv 64
+```
+
+**CC tracks in the arrangement view:**
+
+Tracks that contain only CC events render as automation lanes rather than piano rolls. Each step is drawn as a bottom-anchored bar whose height represents the CC value on a 0–127 scale. Horizontal guide lines are drawn at 0, 32, 64, 96, and 127.
+
+**MIDI output:**
+
+CC events are sent as standard MIDI CC messages (`0xB0`) on the track's assigned channel. There is no note-off for CC — the value simply holds until the next message, which is standard MIDI behavior.
+
+**Inspiration:**
+
+The `ccn`/`ccv` parameter convention follows the SuperDirt MIDI tutorial:
+https://userbase.tidalcycles.org/SuperDirt_MIDI_Tutorial.html
+
 ## Examples
 
 ### Basic Drum Track
@@ -516,6 +605,23 @@ stack [
 ]*2
 ```
 
+### CC Automation With LFO
+
+```tidal
+track cutoff {
+  seqP [
+    ccn 74 # ccv (sine 16 10 110),
+    ccn 74 # ccv "110 90 70 50 30 10 30 60"
+  ]
+}
+
+track resonance {
+  seqP [
+    ccn 71 # ccv (saw 8 0 100)
+  ]
+}
+```
+
 ### Comments
 
 ```tidal
@@ -571,9 +677,10 @@ The app includes browser-side Web MIDI support.
 When you press `Play`:
 
 - the app loops the current arrangement
-- it schedules note-on and note-off events
-- the selected MIDI output receives note messages
-- the corresponding note rectangles are highlighted in the SVG
+- it schedules note-on and note-off events for note tracks
+- it schedules CC messages for automation tracks
+- the selected MIDI output receives all messages
+- the corresponding note or automation bars are highlighted in the SVG
 
 ### Highlighting Model
 
@@ -657,9 +764,12 @@ Useful entry points in the code:
 - `expandSequenceExpression`: `cat`, `replicate`, and identifier expansion
 - `extractLetBindings`: `let` binding collection
 - `parseArrangement`: full arrangement parsing
-- `renderArrangement`: SVG arrangement renderer
+- `renderArrangement`: SVG arrangement renderer (note tracks and CC automation lanes)
+- `voiceFromExpression`: voice type detection including CC voices
+- `expandLfo`: LFO waveform expansion into discrete CC value steps
 - `refreshMidiOutputs`: Web MIDI output discovery
 - `startPlayback`: playback scheduling
+- `triggerEvent`: note-on/off and CC message dispatch
 - `setDrawerOpen`: editor drawer toggle
 
 ## Current Design Direction
@@ -682,6 +792,9 @@ Likely next areas:
 - improve MIDI routing and channel assignment
 - add viewport zoom and horizontal scroll
 - consider pattern validation and better parser diagnostics
+- CC: continuous LFO interpolation between steps (currently discrete)
+- CC: `midichan` override per CC voice
+- CC: support patterned `ccn` (multiple CC numbers in one voice)
 
 ## Reference Material
 
@@ -691,3 +804,4 @@ These references are helpful for aligning the project with real Tidal semantics 
 - https://maxwelltfirn.com/2017/08/12/tidalcycles/
 - https://tidalcycles.org/docs/reference/composition/
 - https://tidalcycles.org/docs/reference/accumulation/
+- https://userbase.tidalcycles.org/SuperDirt_MIDI_Tutorial.html (CC automation)

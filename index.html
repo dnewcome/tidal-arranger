@@ -143,7 +143,7 @@
     svg {
       display: block;
       width: 100%;
-      height: auto;
+      height: 100%;
     }
 
     .legend {
@@ -496,6 +496,21 @@ track synth {
       n "a3 [c4 e4] g4*2 ~" # s "superpiano"
     ]
   ]
+}
+
+-- CC automation: filter cutoff LFO then stepped pattern
+track cutoff {
+  seqP [
+    ccn 74 # ccv (sine 16 10 110),
+    ccn 74 # ccv "110 90 70 50 30 10 30 60"
+  ]
+}
+
+-- CC automation: resonance sweep
+track resonance {
+  seqP [
+    ccn 71 # ccv (saw 8 0 100)
+  ]
 }</textarea>
         </div>
       </div>
@@ -747,6 +762,36 @@ track synth {
       return match ? match[2] : null;
     }
 
+    function extractCcvLfo(source) {
+      const match = source.match(/\bccv\b\s*\(([^)]*)\)/i);
+      return match ? match[1].trim() : null;
+    }
+
+    function expandLfo(lfoExpr) {
+      const match = lfoExpr.match(/^(sine|saw|tri|square)\s+(\d+)\s+(\d+)\s+(\d+)$/i);
+      if (!match) {
+        return null;
+      }
+      const [, shape, stepsStr, loStr, hiStr] = match;
+      const n = parseInt(stepsStr, 10);
+      const lo = parseInt(loStr, 10);
+      const hi = parseInt(hiStr, 10);
+      const values = [];
+      for (let i = 0; i < n; i += 1) {
+        const t = i / n;
+        let norm;
+        switch (shape.toLowerCase()) {
+          case "sine": norm = (Math.sin(t * 2 * Math.PI - Math.PI / 2) + 1) / 2; break;
+          case "saw": norm = t; break;
+          case "tri": norm = t < 0.5 ? t * 2 : (1 - t) * 2; break;
+          case "square": norm = t < 0.5 ? 1 : 0; break;
+          default: norm = 0.5;
+        }
+        values.push(Math.round(lo + norm * (hi - lo)));
+      }
+      return values.join(" ");
+    }
+
     function stripLineComments(source) {
       let result = "";
       let quote = "";
@@ -844,6 +889,25 @@ track synth {
     }
 
     function voiceFromExpression(expression, index) {
+      const ccnNumMatch = expression.match(/\bccn\b\s+(\d+)/i);
+      if (ccnNumMatch) {
+        const ccn = parseInt(ccnNumMatch[1], 10);
+        const ccvQuoted = extractQuotedArgument(expression, "ccv");
+        const ccvLfoSrc = extractCcvLfo(expression);
+        let ccvPattern = "64";
+        if (ccvQuoted !== null) {
+          ccvPattern = ccvQuoted;
+        } else if (ccvLfoSrc !== null) {
+          ccvPattern = expandLfo(ccvLfoSrc) || "64";
+        } else {
+          const plainMatch = expression.match(/\bccv\b\s+(\d+)/i);
+          if (plainMatch) {
+            ccvPattern = plainMatch[1];
+          }
+        }
+        return { type: "cc", ccn, instrument: `cc${ccn}`, pattern: ccvPattern, mode: "cc", source: expression };
+      }
+
       const customVoiceMatch = expression.match(/^([a-zA-Z0-9_-]+)\s*:\s*(.+)$/);
       if (customVoiceMatch) {
         const instrument = customVoiceMatch[1];
@@ -937,7 +1001,9 @@ track synth {
         instrument: resolveInstrument(token, voice),
         label: token,
         pitch,
-        isDrum: voice.mode !== "pitched" && typeof drumNotes[token.toLowerCase()] === "number",
+        ccn: voice.mode === "cc" ? voice.ccn : undefined,
+        type: voice.mode === "cc" ? "cc" : "note",
+        isDrum: voice.mode === "cc" ? false : (voice.mode !== "pitched" && typeof drumNotes[token.toLowerCase()] === "number"),
         start,
         duration
       });
@@ -951,6 +1017,11 @@ track synth {
     }
 
     function resolvePitch(token, voice) {
+      if (voice.mode === "cc") {
+        const val = parseInt(token, 10);
+        return isNaN(val) ? 64 : Math.max(0, Math.min(127, val));
+      }
+
       if (voice.mode === "pitched") {
         const midi = parseNoteValue(token);
         return midi === null ? 60 : midi;
@@ -1390,7 +1461,8 @@ track synth {
       const label = group.querySelector(".note-label");
 
       if (body) {
-        body.setAttribute("opacity", isActive ? "1" : "0.9");
+        const restOpacity = body.getAttribute("data-rest-opacity") || "0.9";
+        body.setAttribute("opacity", isActive ? "1" : restOpacity);
         body.setAttribute("filter", isActive ? "url(#note-glow)" : "");
       }
 
@@ -1442,6 +1514,21 @@ track synth {
     function triggerEvent(event, output, token) {
       activeEventIds.add(event.id);
       setEventHighlight(event.id, true);
+
+      if (event.type === "cc") {
+        if (output) {
+          output.send([0xB0 + event.channel, event.ccn, event.pitch]);
+        }
+        window.setTimeout(() => {
+          if (playbackToken !== token) {
+            return;
+          }
+          activeEventIds.delete(event.id);
+          setEventHighlight(event.id, false);
+        }, Math.max(40, event.duration * getStepDurationMs() - 8));
+        return;
+      }
+
       if (output) {
         output.send([0x90 + event.channel, event.pitch, event.velocity]);
       }
@@ -1520,8 +1607,9 @@ track synth {
 
     function renderArrangement(arrangement) {
       const allEvents = arrangement.tracks.flatMap((track) => track.events);
-      const width = 980;
-      const height = 520;
+      const rollFrame = svg.parentElement;
+      const width = Math.max(200, rollFrame.clientWidth);
+      const height = Math.max(200, rollFrame.clientHeight);
       const margin = { top: 26, right: 18, bottom: 28, left: 96 };
       const innerWidth = width - margin.left - margin.right;
       const innerHeight = height - margin.top - margin.bottom;
@@ -1548,57 +1636,156 @@ track synth {
         const top = margin.top + trackIndex * trackHeight;
         const laneY = top + 8;
         const laneHeight = Math.max(28, trackHeight - 14);
-        const trackRange = track.events.length ? pitchRange(track.events) : { min: 60, max: 68 };
-        const pitchCount = trackRange.max - trackRange.min + 1;
-        const rowHeight = laneHeight / pitchCount;
         const titleFontSize = trackHeight > 90 ? 18 : trackHeight > 64 ? 15 : 12;
         const metaFontSize = trackHeight > 64 ? 11 : 9;
         const showMeta = trackHeight > 48;
         const cornerRadius = Math.max(8, Math.min(18, trackHeight * 0.16));
+        const isCcTrack = track.events.length > 0 && track.events.every((e) => e.type === "cc");
 
-        parts.push(`<rect x="10" y="${top}" width="${width - 20}" height="${Math.max(24, trackHeight - 2)}" rx="${cornerRadius}" fill="rgba(255,255,255,0.5)" stroke="rgba(31,31,27,0.08)"></rect>`);
+        // Split note tracks into piano-roll zone + velocity/automation zone
+        const autoRatio = 0.28;
+        const noteZoneH = isCcTrack ? 0 : Math.floor(laneHeight * (1 - autoRatio));
+        const autoZoneH = laneHeight - noteZoneH;
+        const autoZoneY = laneY + noteZoneH;
+
+        const bgFill = isCcTrack ? "rgba(235,240,255,0.55)" : "rgba(255,255,255,0.5)";
+        parts.push(`<rect x="10" y="${top}" width="${width - 20}" height="${Math.max(24, trackHeight - 2)}" rx="${cornerRadius}" fill="${bgFill}" stroke="rgba(31,31,27,0.08)"></rect>`);
         parts.push(`<text x="26" y="${top + Math.min(28, trackHeight * 0.45)}" fill="#1f1f1b" font-family="Space Grotesk, sans-serif" font-size="${titleFontSize}" font-weight="700">${track.name}</text>`);
         if (showMeta) {
-          parts.push(`<text x="26" y="${top + Math.min(48, trackHeight * 0.72)}" fill="#6d665a" font-family="IBM Plex Mono, monospace" font-size="${metaFontSize}">${track.segments.length} seq step${track.segments.length === 1 ? "" : "s"}</text>`);
+          const metaLabel = isCcTrack
+            ? `CC automation · ${track.segments.length} step${track.segments.length === 1 ? "" : "s"}`
+            : `${track.segments.length} seq step${track.segments.length === 1 ? "" : "s"}`;
+          parts.push(`<text x="26" y="${top + Math.min(48, trackHeight * 0.72)}" fill="#6d665a" font-family="IBM Plex Mono, monospace" font-size="${metaFontSize}">${metaLabel}</text>`);
         }
 
-        for (let pitch = trackRange.min; pitch <= trackRange.max; pitch += 1) {
-          const row = trackRange.max - pitch;
-          const y = laneY + row * rowHeight;
-          const isBlack = [1, 3, 6, 8, 10].includes(pitch % 12);
-          parts.push(`<rect x="${margin.left}" y="${y}" width="${innerWidth}" height="${rowHeight}" fill="${isBlack ? "rgba(17,17,17,0.035)" : "rgba(255,255,255,0.09)"}"></rect>`);
-          parts.push(`<line x1="${margin.left}" y1="${y}" x2="${width - margin.right}" y2="${y}" stroke="rgba(53,46,31,0.06)" stroke-width="1"></line>`);
-        }
+        if (!isCcTrack) {
+          // ── Piano Roll Zone ───────────────────────────────────────────
+          const noteEvents = track.events.filter((e) => e.type !== "cc");
+          const trackRange = noteEvents.length ? pitchRange(noteEvents) : { min: 60, max: 68 };
+          const pitchCount = trackRange.max - trackRange.min + 1;
+          const rowHeight = noteZoneH / pitchCount;
 
-        if (trackHeight > 54) {
-          parts.push(`<text x="${margin.left - 10}" y="${laneY + 12}" text-anchor="end" fill="#6d665a" font-family="IBM Plex Mono, monospace" font-size="${metaFontSize}">${noteName(trackRange.max)}</text>`);
-          parts.push(`<text x="${margin.left - 10}" y="${laneY + laneHeight - 4}" text-anchor="end" fill="#6d665a" font-family="IBM Plex Mono, monospace" font-size="${metaFontSize}">${noteName(trackRange.min)}</text>`);
-        }
-
-        track.segments.forEach((segment, segmentIndex) => {
-          const segmentX = margin.left + (segment.start / totalLength) * innerWidth;
-          const segmentWidth = Math.max(10, (segment.duration / totalLength) * innerWidth);
-          parts.push(`<rect x="${segmentX}" y="${laneY}" width="${segmentWidth}" height="${laneHeight}" rx="${Math.max(6, Math.min(14, laneHeight * 0.14))}" fill="rgba(22,66,60,0.04)" stroke="rgba(22,66,60,0.2)" stroke-dasharray="5 5"></rect>`);
-          if (trackHeight > 50) {
-            parts.push(`<text x="${segmentX + 8}" y="${laneY + 16}" fill="#16423c" font-family="IBM Plex Mono, monospace" font-size="${metaFontSize}">seq ${segmentIndex + 1}</text>`);
+          for (let pitch = trackRange.min; pitch <= trackRange.max; pitch += 1) {
+            const row = trackRange.max - pitch;
+            const y = laneY + row * rowHeight;
+            const isBlack = [1, 3, 6, 8, 10].includes(pitch % 12);
+            parts.push(`<rect x="${margin.left}" y="${y}" width="${innerWidth}" height="${rowHeight}" fill="${isBlack ? "rgba(17,17,17,0.035)" : "rgba(255,255,255,0.09)"}"></rect>`);
+            parts.push(`<line x1="${margin.left}" y1="${y}" x2="${width - margin.right}" y2="${y}" stroke="rgba(53,46,31,0.06)" stroke-width="1"></line>`);
           }
-        });
 
-        track.events.forEach((event) => {
-          const x = margin.left + (event.start / totalLength) * innerWidth;
-          const w = Math.max(6, (event.duration / totalLength) * innerWidth - 2);
-          const y = laneY + (trackRange.max - event.pitch) * rowHeight + 2;
-          const h = Math.max(8, rowHeight - 4);
-          const fill = colorMap.get(event.instrument);
-          const label = `${event.instrument}: ${event.label}`;
-          parts.push(`<g data-event-id="${event.id}">`);
-          parts.push(`<rect class="note-body" x="${x + 1}" y="${y}" width="${w}" height="${h}" rx="7" fill="${fill}" opacity="${activeEventIds.has(event.id) ? "1" : "0.9"}"></rect>`);
-          parts.push(`<rect class="note-outline" x="${x + 1}" y="${y}" width="${w}" height="${h}" rx="7" fill="none" stroke="${activeEventIds.has(event.id) ? "rgba(255,255,255,0.95)" : "rgba(0,0,0,0.14)"}" stroke-width="${activeEventIds.has(event.id) ? "1.8" : "1"}"></rect>`);
-          if (w > 44 && h > 13) {
-            parts.push(`<text class="note-label" x="${x + 7}" y="${y + h * 0.62}" fill="rgba(255,255,255,0.9)" font-family="IBM Plex Mono, monospace" font-size="10">${label}</text>`);
+          if (noteZoneH > 54) {
+            parts.push(`<text x="${margin.left - 10}" y="${laneY + 12}" text-anchor="end" fill="#6d665a" font-family="IBM Plex Mono, monospace" font-size="${metaFontSize}">${noteName(trackRange.max)}</text>`);
+            parts.push(`<text x="${margin.left - 10}" y="${laneY + noteZoneH - 4}" text-anchor="end" fill="#6d665a" font-family="IBM Plex Mono, monospace" font-size="${metaFontSize}">${noteName(trackRange.min)}</text>`);
           }
-          parts.push(`</g>`);
-        });
+
+          track.segments.forEach((segment, segmentIndex) => {
+            const segmentX = margin.left + (segment.start / totalLength) * innerWidth;
+            const segmentWidth = Math.max(10, (segment.duration / totalLength) * innerWidth);
+            parts.push(`<rect x="${segmentX}" y="${laneY}" width="${segmentWidth}" height="${laneHeight}" rx="${Math.max(6, Math.min(14, laneHeight * 0.14))}" fill="rgba(22,66,60,0.04)" stroke="rgba(22,66,60,0.2)" stroke-dasharray="5 5"></rect>`);
+            if (trackHeight > 50) {
+              parts.push(`<text x="${segmentX + 8}" y="${laneY + 16}" fill="#16423c" font-family="IBM Plex Mono, monospace" font-size="${metaFontSize}">seq ${segmentIndex + 1}</text>`);
+            }
+          });
+
+          // Note rectangles
+          noteEvents.forEach((event) => {
+            const x = margin.left + (event.start / totalLength) * innerWidth;
+            const w = Math.max(6, (event.duration / totalLength) * innerWidth - 2);
+            const y = laneY + (trackRange.max - event.pitch) * rowHeight + 2;
+            const h = Math.max(8, rowHeight - 4);
+            const fill = colorMap.get(event.instrument);
+            const label = `${event.instrument}: ${event.label}`;
+            const isActive = activeEventIds.has(event.id);
+            parts.push(`<g data-event-id="${event.id}">`);
+            parts.push(`<rect class="note-body" x="${x + 1}" y="${y}" width="${w}" height="${h}" rx="7" fill="${fill}" opacity="${isActive ? "1" : "0.9"}" ${isActive ? `filter="url(#note-glow)"` : ""}></rect>`);
+            parts.push(`<rect class="note-outline" x="${x + 1}" y="${y}" width="${w}" height="${h}" rx="7" fill="none" stroke="${isActive ? "rgba(255,255,255,0.95)" : "rgba(0,0,0,0.14)"}" stroke-width="${isActive ? "1.8" : "1"}"></rect>`);
+            if (w > 44 && h > 13) {
+              parts.push(`<text class="note-label" x="${x + 7}" y="${y + h * 0.62}" fill="rgba(255,255,255,0.9)" font-family="IBM Plex Mono, monospace" font-size="10">${label}</text>`);
+            }
+            parts.push(`</g>`);
+          });
+
+          // ── Velocity Lane ─────────────────────────────────────────────
+          if (autoZoneH > 6) {
+            parts.push(`<line x1="${margin.left}" y1="${autoZoneY}" x2="${width - margin.right}" y2="${autoZoneY}" stroke="rgba(53,46,31,0.14)" stroke-width="1"></line>`);
+            if (autoZoneH > 14) {
+              parts.push(`<text x="${margin.left - 6}" y="${autoZoneY + autoZoneH * 0.6}" text-anchor="end" fill="#9b9287" font-family="IBM Plex Mono, monospace" font-size="${metaFontSize}">vel</text>`);
+            }
+            noteEvents.forEach((event) => {
+              const x = margin.left + (event.start / totalLength) * innerWidth;
+              const velNorm = (event.velocity || 100) / 127;
+              const barH = Math.max(1, velNorm * autoZoneH);
+              const y = autoZoneY + autoZoneH - barH;
+              const fill = colorMap.get(event.instrument);
+              parts.push(`<rect x="${x}" y="${y}" width="2" height="${barH}" fill="${fill}" opacity="0.75"></rect>`);
+            });
+          }
+        } else {
+          // ── CC Automation Lane (step-function line graph) ─────────────
+          // Grid lines at 0, 32, 64, 96, 127
+          for (const pct of [0, 0.25, 0.5, 0.75, 1.0]) {
+            const y = autoZoneY + autoZoneH * (1 - pct);
+            parts.push(`<line x1="${margin.left}" y1="${y}" x2="${width - margin.right}" y2="${y}" stroke="rgba(53,46,31,0.1)" stroke-width="1" stroke-dasharray="3 4"></line>`);
+            if (trackHeight > 44) {
+              parts.push(`<text x="${margin.left - 6}" y="${y + 4}" text-anchor="end" fill="#6d665a" font-family="IBM Plex Mono, monospace" font-size="${metaFontSize}">${Math.round(pct * 127)}</text>`);
+            }
+          }
+
+          track.segments.forEach((segment, segmentIndex) => {
+            const segmentX = margin.left + (segment.start / totalLength) * innerWidth;
+            const segmentWidth = Math.max(10, (segment.duration / totalLength) * innerWidth);
+            parts.push(`<rect x="${segmentX}" y="${autoZoneY}" width="${segmentWidth}" height="${autoZoneH}" rx="${Math.max(6, Math.min(14, autoZoneH * 0.14))}" fill="rgba(30,50,120,0.04)" stroke="rgba(30,50,120,0.18)" stroke-dasharray="5 5"></rect>`);
+            if (trackHeight > 50) {
+              parts.push(`<text x="${segmentX + 8}" y="${autoZoneY + 16}" fill="#223080" font-family="IBM Plex Mono, monospace" font-size="${metaFontSize}">seq ${segmentIndex + 1}</text>`);
+            }
+          });
+
+          // Group events by ccn, draw one filled step-function area per controller
+          const ccGroups = new Map();
+          track.events.forEach((event) => {
+            if (!ccGroups.has(event.ccn)) {
+              ccGroups.set(event.ccn, []);
+            }
+            ccGroups.get(event.ccn).push(event);
+          });
+
+          ccGroups.forEach((events, ccn) => {
+            const sorted = [...events].sort((a, b) => a.start - b.start);
+            const fill = colorMap.get(`cc${ccn}`) || "#7c5cff";
+            const baseY = autoZoneY + autoZoneH;
+            let pathD = "";
+            sorted.forEach((event, i) => {
+              const x1 = margin.left + (event.start / totalLength) * innerWidth;
+              const x2 = margin.left + ((event.start + event.duration) / totalLength) * innerWidth;
+              const y = autoZoneY + autoZoneH * (1 - event.pitch / 127);
+              if (i === 0) {
+                pathD += `M ${x1} ${baseY} L ${x1} ${y}`;
+              } else {
+                pathD += ` L ${x1} ${y}`;
+              }
+              pathD += ` L ${x2} ${y}`;
+              if (i === sorted.length - 1) {
+                pathD += ` L ${x2} ${baseY} Z`;
+              }
+            });
+            if (pathD) {
+              parts.push(`<path d="${pathD}" fill="${fill}" fill-opacity="0.18" stroke="${fill}" stroke-width="2" stroke-linejoin="round"></path>`);
+            }
+          });
+
+          // Invisible hit targets per event for playback highlight
+          track.events.forEach((event) => {
+            const x = margin.left + (event.start / totalLength) * innerWidth;
+            const w = Math.max(2, (event.duration / totalLength) * innerWidth - 1);
+            const y = autoZoneY + autoZoneH * (1 - event.pitch / 127);
+            const h = Math.max(4, autoZoneY + autoZoneH - y);
+            const fill = colorMap.get(event.instrument) || "#7c5cff";
+            const isActive = activeEventIds.has(event.id);
+            parts.push(`<g data-event-id="${event.id}">`);
+            parts.push(`<rect class="note-body" x="${x}" y="${y}" width="${w}" height="${h}" fill="${fill}" opacity="${isActive ? "0.35" : "0"}" data-rest-opacity="0" ${isActive ? `filter="url(#note-glow)"` : ""}></rect>`);
+            parts.push(`</g>`);
+          });
+        }
       });
 
       svg.innerHTML = parts.join("");
@@ -1613,11 +1800,14 @@ track synth {
 
     function renderEmptyState(message) {
       clearActiveHighlights();
-      svg.setAttribute("viewBox", "0 0 980 520");
+      const rollFrame = svg.parentElement;
+      const w = Math.max(200, rollFrame.clientWidth);
+      const h = Math.max(200, rollFrame.clientHeight);
+      svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
       svg.innerHTML = [
-        `<rect width="980" height="520" fill="#fffaf0"></rect>`,
-        `<text x="490" y="248" text-anchor="middle" fill="#6d665a" font-family="IBM Plex Mono, monospace" font-size="18">No notes to display</text>`,
-        `<text x="490" y="278" text-anchor="middle" fill="#8b8477" font-family="IBM Plex Mono, monospace" font-size="12">${message}</text>`
+        `<rect width="${w}" height="${h}" fill="#fffaf0"></rect>`,
+        `<text x="${w / 2}" y="${h / 2 - 16}" text-anchor="middle" fill="#6d665a" font-family="IBM Plex Mono, monospace" font-size="18">No notes to display</text>`,
+        `<text x="${w / 2}" y="${h / 2 + 14}" text-anchor="middle" fill="#8b8477" font-family="IBM Plex Mono, monospace" font-size="12">${message}</text>`
       ].join("");
       legend.innerHTML = "";
     }
