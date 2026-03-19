@@ -1046,6 +1046,134 @@ track synth {
       return -1;
     }
 
+    function unwrapOuterParens(value) {
+      const trimmed = value.trim();
+      if (!trimmed.startsWith("(") || !trimmed.endsWith(")")) {
+        return null;
+      }
+
+      const closeIndex = findMatchingDelimiter(trimmed, 0, "(", ")");
+      if (closeIndex !== trimmed.length - 1) {
+        return null;
+      }
+
+      return trimmed.slice(1, -1).trim();
+    }
+
+    function splitTopLevelStatements(source) {
+      const statements = [];
+      let depth = 0;
+      let quote = "";
+      let current = "";
+
+      for (let i = 0; i < source.length; i += 1) {
+        const char = source[i];
+        const prev = source[i - 1];
+
+        if (quote) {
+          current += char;
+          if (char === quote && prev !== "\\") {
+            quote = "";
+          }
+          continue;
+        }
+
+        if (char === "\"" || char === "'") {
+          quote = char;
+          current += char;
+          continue;
+        }
+
+        if (char === "[" || char === "{" || char === "(") {
+          depth += 1;
+          current += char;
+          continue;
+        }
+
+        if (char === "]" || char === "}" || char === ")") {
+          depth = Math.max(0, depth - 1);
+          current += char;
+          continue;
+        }
+
+        if (char === "\n" && depth === 0) {
+          if (current.trim()) {
+            statements.push(current.trim());
+          }
+          current = "";
+          continue;
+        }
+
+        current += char;
+      }
+
+      if (current.trim()) {
+        statements.push(current.trim());
+      }
+
+      return statements;
+    }
+
+    function expandSequenceExpression(expression, env = {}) {
+      const trimmed = expression.trim();
+      if (!trimmed) {
+        return [];
+      }
+
+      if (env[trimmed]) {
+        return env[trimmed];
+      }
+
+      const parenBody = unwrapOuterParens(trimmed);
+      if (parenBody !== null) {
+        return expandSequenceExpression(parenBody, env);
+      }
+
+      const replicateMatch = trimmed.match(/^replicate\s+(\d+)\s+([\s\S]+)$/);
+      if (replicateMatch) {
+        const count = Number.parseInt(replicateMatch[1], 10);
+        const source = replicateMatch[2].trim();
+        const expanded = expandSequenceExpression(source, env);
+        const repeated = [];
+        for (let i = 0; i < count; i += 1) {
+          repeated.push(...expanded);
+        }
+        return repeated;
+      }
+
+      const catListMatch = trimmed.match(/^cat\s*\[(.*)\]$/s);
+      if (catListMatch) {
+        return splitTopLevel(catListMatch[1], "comma").flatMap((item) => expandSequenceExpression(item, env));
+      }
+
+      const catParenMatch = trimmed.match(/^cat\s*\(([\s\S]+)\)$/);
+      if (catParenMatch) {
+        return expandSequenceExpression(catParenMatch[1], env);
+      }
+
+      return [trimmed];
+    }
+
+    function extractLetBindings(source, inheritedEnv = {}) {
+      const env = { ...inheritedEnv };
+      const remaining = [];
+
+      splitTopLevelStatements(source).forEach((statement) => {
+        const match = statement.match(/^let\s+([a-zA-Z][a-zA-Z0-9_-]*)\s*=\s*([\s\S]+)$/);
+        if (!match) {
+          remaining.push(statement);
+          return;
+        }
+
+        env[match[1]] = expandSequenceExpression(match[2], env);
+      });
+
+      return {
+        env,
+        source: remaining.join("\n")
+      };
+    }
+
     function normalizeBlockName(rawName, fallback) {
       const trimmed = rawName.trim();
       if (!trimmed) {
@@ -1113,22 +1241,23 @@ track synth {
       }));
     }
 
-    function sequenceStepsFromSource(source) {
+    function sequenceStepsFromSource(source, env = {}) {
       const sequences = extractSeqBlocks(source);
       if (sequences.length) {
-        return sequences.flat();
+        return sequences.flatMap((sequence) => sequence.flatMap((item) => expandSequenceExpression(item, env)));
       }
 
       const trimmed = source.trim();
-      return trimmed ? [trimmed] : [];
+      return trimmed ? expandSequenceExpression(trimmed, env) : [];
     }
 
     function parseArrangement(source) {
       const sanitized = stripLineComments(source);
-      const trackBlocks = extractTrackBlocks(sanitized);
+      const topLevel = extractLetBindings(sanitized);
+      const trackBlocks = extractTrackBlocks(topLevel.source);
 
       if (!trackBlocks.length) {
-        const steps = sequenceStepsFromSource(sanitized);
+        const steps = sequenceStepsFromSource(topLevel.source, topLevel.env);
         const segments = steps.map((step, index) => ({
           start: index,
           duration: 1,
@@ -1149,7 +1278,8 @@ track synth {
       }
 
       const tracks = trackBlocks.map((trackBlock, trackIndex) => {
-        const segments = sequenceStepsFromSource(trackBlock.body).map((step, stepIndex) => {
+        const trackScope = extractLetBindings(trackBlock.body, topLevel.env);
+        const segments = sequenceStepsFromSource(trackScope.source, trackScope.env).map((step, stepIndex) => {
           const stepDef = {
             start: stepIndex,
             duration: 1
