@@ -1,0 +1,1103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tidal Clip Prototype</title>
+  <style>
+    :root {
+      --bg: #f6f1e8;
+      --panel: rgba(255, 252, 246, 0.88);
+      --panel-strong: #fffaf0;
+      --ink: #1f1f1b;
+      --muted: #6d665a;
+      --grid: rgba(53, 46, 31, 0.12);
+      --grid-strong: rgba(53, 46, 31, 0.22);
+      --accent: #16423c;
+      --accent-soft: #dcece8;
+      --border: rgba(31, 31, 27, 0.16);
+      --shadow: 0 24px 60px rgba(34, 24, 7, 0.14);
+      --radius: 20px;
+      --mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+      --sans: "Space Grotesk", "Avenir Next", "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: var(--sans);
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(254, 211, 48, 0.22), transparent 28%),
+        radial-gradient(circle at right 20%, rgba(22, 66, 60, 0.16), transparent 24%),
+        linear-gradient(180deg, #efe7da 0%, var(--bg) 48%, #ede6dc 100%);
+    }
+
+    .shell {
+      width: min(1180px, calc(100vw - 32px));
+      margin: 24px auto;
+      display: grid;
+      gap: 18px;
+    }
+
+    .hero,
+    .panel {
+      background: var(--panel);
+      backdrop-filter: blur(16px);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+      border-radius: var(--radius);
+    }
+
+    .hero {
+      padding: 22px 24px 20px;
+    }
+
+    .eyebrow {
+      margin: 0 0 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      font-size: 0.73rem;
+      color: var(--muted);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(2rem, 4vw, 3.6rem);
+      line-height: 0.95;
+      letter-spacing: -0.04em;
+    }
+
+    .lede {
+      max-width: 60rem;
+      margin: 14px 0 0;
+      color: var(--muted);
+      font-size: 1rem;
+      line-height: 1.5;
+    }
+
+    .workspace {
+      display: grid;
+      gap: 18px;
+      grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.9fr);
+      align-items: start;
+    }
+
+    .panel {
+      overflow: hidden;
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 16px;
+      padding: 18px 20px 12px;
+    }
+
+    .panel-title {
+      margin: 0;
+      font-size: 1.1rem;
+      letter-spacing: -0.02em;
+    }
+
+    .panel-note {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.88rem;
+    }
+
+    .roll-wrap {
+      padding: 0 18px 18px;
+    }
+
+    .roll-frame {
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0.32)),
+        var(--panel-strong);
+      border: 1px solid rgba(31, 31, 27, 0.08);
+      border-radius: 18px;
+      overflow: hidden;
+      min-height: 440px;
+    }
+
+    svg {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      padding: 14px 2px 0;
+    }
+
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 11px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.7);
+      border: 1px solid rgba(31, 31, 27, 0.08);
+      font-size: 0.82rem;
+    }
+
+    .legend-swatch {
+      width: 12px;
+      height: 12px;
+      border-radius: 999px;
+      flex: 0 0 auto;
+    }
+
+    .editor {
+      padding: 0 20px 20px;
+    }
+
+    .toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      padding-bottom: 10px;
+    }
+
+    .kbd {
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      padding: 5px 8px;
+      border-radius: 8px;
+      background: rgba(22, 66, 60, 0.08);
+      color: var(--accent);
+      border: 1px solid rgba(22, 66, 60, 0.16);
+    }
+
+    button {
+      appearance: none;
+      border: none;
+      border-radius: 12px;
+      background: var(--accent);
+      color: white;
+      padding: 12px 16px;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 10px 24px rgba(22, 66, 60, 0.22);
+      transition: transform 140ms ease, box-shadow 140ms ease;
+    }
+
+    button:hover,
+    button:focus-visible {
+      transform: translateY(-1px);
+      box-shadow: 0 14px 28px rgba(22, 66, 60, 0.26);
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 440px;
+      resize: vertical;
+      border-radius: 18px;
+      padding: 18px;
+      border: 1px solid rgba(31, 31, 27, 0.12);
+      background: rgba(255, 254, 251, 0.9);
+      color: var(--ink);
+      font: 0.96rem/1.55 var(--mono);
+      outline: none;
+    }
+
+    textarea:focus {
+      border-color: rgba(22, 66, 60, 0.36);
+      box-shadow: 0 0 0 4px rgba(22, 66, 60, 0.08);
+    }
+
+    .status {
+      min-height: 48px;
+      margin-top: 12px;
+      padding: 12px 14px;
+      border-radius: 14px;
+      background: rgba(22, 66, 60, 0.07);
+      color: var(--accent);
+      border: 1px solid rgba(22, 66, 60, 0.12);
+      font-size: 0.9rem;
+      line-height: 1.45;
+    }
+
+    .guide {
+      display: grid;
+      gap: 10px;
+      padding: 0 20px 20px;
+    }
+
+    .guide code {
+      font-family: var(--mono);
+      background: rgba(31, 31, 27, 0.05);
+      padding: 0.12rem 0.28rem;
+      border-radius: 5px;
+    }
+
+    .guide p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.92rem;
+      line-height: 1.5;
+    }
+
+    @media (max-width: 980px) {
+      .workspace {
+        grid-template-columns: 1fr;
+      }
+
+      .roll-frame,
+      textarea {
+        min-height: 360px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <p class="eyebrow">Static HTML Proof of Concept</p>
+      <h1>Tidal Pattern to Piano Roll</h1>
+      <p class="lede">
+        Enter a Tidal-style pattern, press <strong>Ctrl+Enter</strong> or <strong>Cmd+Enter</strong>, and the page
+        replaces the current arrangement with a fresh piano-roll view. Multiple instruments share one grid and are color-coded.
+      </p>
+    </section>
+
+    <section class="workspace">
+      <section class="panel">
+        <header class="panel-header">
+          <div>
+            <h2 class="panel-title">Arrangement View</h2>
+            <p class="panel-note">Tracks rendered as a DAW-style piano roll</p>
+          </div>
+          <p class="panel-note">16-step guide grid</p>
+        </header>
+        <div class="roll-wrap">
+          <div class="roll-frame">
+            <svg id="piano-roll" viewBox="0 0 980 520" role="img" aria-label="Piano roll arrangement preview"></svg>
+          </div>
+          <div id="legend" class="legend" aria-label="Instrument legend"></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <header class="panel-header">
+          <div>
+            <h2 class="panel-title">Pattern Input</h2>
+            <p class="panel-note">Subset parser for Tidal-style mini-notation</p>
+          </div>
+        </header>
+        <div class="editor">
+          <div class="toolbar">
+            <div class="kbd">Ctrl/Cmd + Enter</div>
+            <button id="run-button" type="button">Execute Pattern</button>
+          </div>
+          <textarea id="pattern-input" spellcheck="false">track drums {
+  seqP [
+    stack [
+      s "bd*4 [cp hh cp] bd"
+    ],
+    stack [
+      s "[bd hh] cp hh bd*2"
+    ]
+  ]
+}
+
+track synth {
+  seqP [
+    stack [
+      n "c4 [e4 g4] a4*2 ~" # s "superpiano",
+      n "[60 62] ~ [67 69]*2 72" # s "lead"
+    ],
+    stack [
+      n "a3 [c4 e4] g4*2 ~" # s "superpiano"
+    ]
+  ]
+}</textarea>
+          <div id="status" class="status" aria-live="polite"></div>
+        </div>
+        <div class="guide">
+          <p><code>track drums { seqP [ stack [ ... ], stack [ ... ] ] }</code> creates a track from a time-ordered sequence of patterns.</p>
+          <p><code>[ ... ]</code> subdivides time inside a step. <code>*4</code> repeats inside the current span. <code>~</code> creates a rest.</p>
+          <p>Inside each <code>seqP</code> step, use <code>s "bd cp hh"</code>, <code>n "c4 e4 g4" # s "lead"</code>, or <code>stack [ ... ]</code>. Plain stack syntax still works and becomes a default single-step track.</p>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <script>
+    const svg = document.getElementById("piano-roll");
+    const legend = document.getElementById("legend");
+    const input = document.getElementById("pattern-input");
+    const status = document.getElementById("status");
+    const runButton = document.getElementById("run-button");
+
+    const palette = [
+      "#d85f45",
+      "#2d6a4f",
+      "#7c5cff",
+      "#ca6702",
+      "#0f4c5c",
+      "#b23a48",
+      "#227c9d",
+      "#5f0f40",
+      "#6b8f71",
+      "#8a5a44"
+    ];
+
+    const drumNotes = {
+      bd: 36,
+      kick: 36,
+      sd: 38,
+      sn: 38,
+      cp: 39,
+      rim: 37,
+      hh: 42,
+      ch: 42,
+      oh: 46,
+      hc: 42,
+      ho: 46,
+      lt: 45,
+      mt: 47,
+      ht: 50,
+      rs: 37,
+      cb: 56,
+      cym: 49
+    };
+
+    function splitTopLevel(source, separator) {
+      const parts = [];
+      let depth = 0;
+      let quote = "";
+      let current = "";
+
+      for (let i = 0; i < source.length; i += 1) {
+        const char = source[i];
+        const prev = source[i - 1];
+
+        if (quote) {
+          current += char;
+          if (char === quote && prev !== "\\") {
+            quote = "";
+          }
+          continue;
+        }
+
+        if (char === "\"" || char === "'") {
+          quote = char;
+          current += char;
+          continue;
+        }
+
+        if (char === "[" || char === "<" || char === "(") {
+          depth += 1;
+          current += char;
+          continue;
+        }
+
+        if (char === "]" || char === ">" || char === ")") {
+          depth = Math.max(0, depth - 1);
+          current += char;
+          continue;
+        }
+
+        if (depth === 0) {
+          if (separator === "space" && /\s/.test(char)) {
+            if (current.trim()) {
+              parts.push(current.trim());
+              current = "";
+            }
+            continue;
+          }
+
+          if (separator === "comma" && char === ",") {
+            if (current.trim()) {
+              parts.push(current.trim());
+              current = "";
+            }
+            continue;
+          }
+        }
+
+        current += char;
+      }
+
+      if (current.trim()) {
+        parts.push(current.trim());
+      }
+
+      return parts;
+    }
+
+    function unwrapOuterBrackets(value) {
+      const trimmed = value.trim();
+      if (!trimmed.startsWith("[") || !trimmed.endsWith("]")) {
+        return null;
+      }
+
+      let depth = 0;
+      let quote = "";
+      for (let i = 0; i < trimmed.length; i += 1) {
+        const char = trimmed[i];
+        const prev = trimmed[i - 1];
+
+        if (quote) {
+          if (char === quote && prev !== "\\") {
+            quote = "";
+          }
+          continue;
+        }
+
+        if (char === "\"" || char === "'") {
+          quote = char;
+          continue;
+        }
+
+        if (char === "[") {
+          depth += 1;
+        } else if (char === "]") {
+          depth -= 1;
+          if (depth === 0 && i !== trimmed.length - 1) {
+            return null;
+          }
+        }
+      }
+
+      return trimmed.slice(1, -1);
+    }
+
+    function splitRepeat(item) {
+      let depth = 0;
+      let quote = "";
+
+      for (let i = item.length - 1; i >= 0; i -= 1) {
+        const char = item[i];
+        const prev = item[i - 1];
+
+        if (quote) {
+          if (char === quote && prev !== "\\") {
+            quote = "";
+          }
+          continue;
+        }
+
+        if (char === "\"" || char === "'") {
+          quote = char;
+          continue;
+        }
+
+        if (char === "]" || char === ">" || char === ")") {
+          depth += 1;
+          continue;
+        }
+
+        if (char === "[" || char === "<" || char === "(") {
+          depth -= 1;
+          continue;
+        }
+
+        if (char === "*" && depth === 0) {
+          const countText = item.slice(i + 1).trim();
+          if (/^\d+$/.test(countText)) {
+            return {
+              base: item.slice(0, i).trim(),
+              count: Number.parseInt(countText, 10)
+            };
+          }
+        }
+      }
+
+      return null;
+    }
+
+    function parseNoteValue(token) {
+      const trimmed = token.trim();
+      if (!trimmed || trimmed === "~") {
+        return null;
+      }
+
+      const drum = drumNotes[trimmed.toLowerCase()];
+      if (typeof drum === "number") {
+        return drum;
+      }
+
+      if (/^-?\d+$/.test(trimmed)) {
+        return Number.parseInt(trimmed, 10);
+      }
+
+      const match = trimmed.match(/^([a-gA-G])([#b]?)(-?\d+)$/);
+      if (!match) {
+        return null;
+      }
+
+      const [, noteName, accidental, octaveText] = match;
+      const base = {
+        c: 0,
+        d: 2,
+        e: 4,
+        f: 5,
+        g: 7,
+        a: 9,
+        b: 11
+      }[noteName.toLowerCase()];
+      const accidentalOffset = accidental === "#" ? 1 : accidental === "b" ? -1 : 0;
+      const octave = Number.parseInt(octaveText, 10);
+
+      return (octave + 1) * 12 + base + accidentalOffset;
+    }
+
+    function extractQuotedArgument(source, keyword) {
+      const pattern = new RegExp(`\\b${keyword}\\b\\s*(?:\\$\\s*)?([\"'])(.*?)\\1`, "i");
+      const match = source.match(pattern);
+      return match ? match[2] : null;
+    }
+
+    function stripLineComments(source) {
+      let result = "";
+      let quote = "";
+
+      for (let i = 0; i < source.length; i += 1) {
+        const char = source[i];
+        const next = source[i + 1];
+        const prev = source[i - 1];
+
+        if (quote) {
+          result += char;
+          if (char === quote && prev !== "\\") {
+            quote = "";
+          }
+          continue;
+        }
+
+        if (char === "\"" || char === "'") {
+          quote = char;
+          result += char;
+          continue;
+        }
+
+        if (char === "-" && next === "-") {
+          while (i < source.length && source[i] !== "\n") {
+            i += 1;
+          }
+          if (i < source.length) {
+            result += "\n";
+          }
+          continue;
+        }
+
+        result += char;
+      }
+
+      return result;
+    }
+
+    function extractStackVoices(source) {
+      const stackIndex = source.search(/\bstack\b/i);
+      if (stackIndex === -1) {
+        return null;
+      }
+
+      const openIndex = source.indexOf("[", stackIndex);
+      if (openIndex === -1) {
+        return null;
+      }
+
+      let depth = 0;
+      let quote = "";
+      for (let i = openIndex; i < source.length; i += 1) {
+        const char = source[i];
+        const prev = source[i - 1];
+
+        if (quote) {
+          if (char === quote && prev !== "\\") {
+            quote = "";
+          }
+          continue;
+        }
+
+        if (char === "\"" || char === "'") {
+          quote = char;
+          continue;
+        }
+
+        if (char === "[") {
+          depth += 1;
+        } else if (char === "]") {
+          depth -= 1;
+          if (depth === 0) {
+            const inner = source.slice(openIndex + 1, i);
+            return splitTopLevel(inner, "comma");
+          }
+        }
+      }
+
+      return null;
+    }
+
+    function normalizeVoiceList(source) {
+      const stackVoices = extractStackVoices(source);
+      if (stackVoices !== null) {
+        return stackVoices;
+      }
+
+      return source
+        .split(/\n+/)
+        .map((line) => line.trim())
+        .map((line) => line.replace(/^,+/, "").trim())
+        .filter(Boolean)
+        .filter((line) => line !== "[" && line !== "]");
+    }
+
+    function voiceFromExpression(expression, index) {
+      const customVoiceMatch = expression.match(/^([a-zA-Z0-9_-]+)\s*:\s*(.+)$/);
+      if (customVoiceMatch) {
+        const instrument = customVoiceMatch[1];
+        const pattern = customVoiceMatch[2];
+        return {
+          instrument,
+          pattern,
+          mode: "auto",
+          source: expression
+        };
+      }
+
+      const notePattern = extractQuotedArgument(expression, "n") || extractQuotedArgument(expression, "note");
+      const soundPattern = extractQuotedArgument(expression, "s") || extractQuotedArgument(expression, "sound");
+
+      if (notePattern) {
+        const instrument = soundPattern
+          ? splitTopLevel(soundPattern, "space").find((token) => token !== "~") || `voice-${index + 1}`
+          : `voice-${index + 1}`;
+        return {
+          instrument,
+          pattern: notePattern,
+          mode: "pitched",
+          source: expression
+        };
+      }
+
+      if (soundPattern) {
+        const tokens = splitTopLevel(soundPattern, "space");
+        const instrument = tokens.find((token) => token !== "~") || `drums-${index + 1}`;
+        return {
+          instrument,
+          pattern: soundPattern,
+          mode: "drums",
+          source: expression
+        };
+      }
+
+      return {
+        instrument: `voice-${index + 1}`,
+        pattern: expression,
+        mode: "auto",
+        source: expression
+      };
+    }
+
+    function expandPattern(pattern, start, duration, events, voice) {
+      const trimmed = pattern.trim();
+      if (!trimmed) {
+        return;
+      }
+
+      const repeat = splitRepeat(trimmed);
+      if (repeat && repeat.base) {
+        const step = duration / repeat.count;
+        for (let i = 0; i < repeat.count; i += 1) {
+          expandPattern(repeat.base, start + (step * i), step, events, voice);
+        }
+        return;
+      }
+
+      const bracketBody = unwrapOuterBrackets(trimmed);
+      if (bracketBody !== null) {
+        const items = splitTopLevel(bracketBody, "space");
+        if (!items.length) {
+          return;
+        }
+        const step = duration / items.length;
+        items.forEach((item, index) => {
+          expandPattern(item, start + (step * index), step, events, voice);
+        });
+        return;
+      }
+
+      const items = splitTopLevel(trimmed, "space");
+      if (items.length > 1) {
+        const step = duration / items.length;
+        items.forEach((item, index) => {
+          expandPattern(item, start + (step * index), step, events, voice);
+        });
+        return;
+      }
+
+      const token = items[0];
+      if (!token || token === "~") {
+        return;
+      }
+
+      const pitch = resolvePitch(token, voice);
+      events.push({
+        instrument: resolveInstrument(token, voice),
+        label: token,
+        pitch,
+        start,
+        duration
+      });
+    }
+
+    function resolveInstrument(token, voice) {
+      if (voice.mode === "drums") {
+        return token.toLowerCase();
+      }
+      return voice.instrument;
+    }
+
+    function resolvePitch(token, voice) {
+      if (voice.mode === "pitched") {
+        const midi = parseNoteValue(token);
+        return midi === null ? 60 : midi;
+      }
+
+      const drumPitch = drumNotes[token.toLowerCase()];
+      if (typeof drumPitch === "number") {
+        return drumPitch;
+      }
+
+      const midi = parseNoteValue(token);
+      if (midi !== null) {
+        return midi;
+      }
+
+      const fallbackBase = 48 + (voice.instrument.length % 12);
+      return fallbackBase;
+    }
+
+    function parseSource(source, options = {}) {
+      const { allowEmpty = false } = options;
+      const sanitized = stripLineComments(source);
+      const voices = normalizeVoiceList(sanitized).map(voiceFromExpression);
+      const events = [];
+
+      voices.forEach((voice) => {
+        expandPattern(voice.pattern, 0, 1, events, voice);
+      });
+
+      if (!events.length && !allowEmpty) {
+        throw new Error("No playable events were parsed. The pattern is empty or fully commented out.");
+      }
+
+      return events.sort((a, b) => a.start - b.start || b.pitch - a.pitch);
+    }
+
+    function findMatchingDelimiter(source, openIndex, openChar, closeChar) {
+      let depth = 0;
+      let quote = "";
+
+      for (let i = openIndex; i < source.length; i += 1) {
+        const char = source[i];
+        const prev = source[i - 1];
+
+        if (quote) {
+          if (char === quote && prev !== "\\") {
+            quote = "";
+          }
+          continue;
+        }
+
+        if (char === "\"" || char === "'") {
+          quote = char;
+          continue;
+        }
+
+        if (char === openChar) {
+          depth += 1;
+        } else if (char === closeChar) {
+          depth -= 1;
+          if (depth === 0) {
+            return i;
+          }
+        }
+      }
+
+      return -1;
+    }
+
+    function normalizeBlockName(rawName, fallback) {
+      const trimmed = rawName.trim();
+      if (!trimmed) {
+        return fallback;
+      }
+
+      if ((trimmed.startsWith("\"") && trimmed.endsWith("\"")) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+        return trimmed.slice(1, -1);
+      }
+
+      return trimmed;
+    }
+
+    function extractTrackBlocks(source) {
+      const blocks = [];
+      const regex = /\btrack\b\s+("[^"]+"|'[^']+'|[a-zA-Z0-9_-]+)\s*\{/g;
+      let match;
+
+      while ((match = regex.exec(source))) {
+        const openIndex = source.indexOf("{", match.index);
+        const closeIndex = findMatchingDelimiter(source, openIndex, "{", "}");
+        if (closeIndex === -1) {
+          throw new Error(`Unclosed track block for ${normalizeBlockName(match[1], "track")}.`);
+        }
+
+        blocks.push({
+          name: normalizeBlockName(match[1], `track-${blocks.length + 1}`),
+          body: source.slice(openIndex + 1, closeIndex)
+        });
+
+        regex.lastIndex = closeIndex + 1;
+      }
+
+      return blocks;
+    }
+
+    function extractSeqBlocks(source) {
+      const sequences = [];
+      const regex = /\bseqP\b\s*\[/g;
+      let match;
+
+      while ((match = regex.exec(source))) {
+        const openIndex = source.indexOf("[", match.index);
+        const closeIndex = findMatchingDelimiter(source, openIndex, "[", "]");
+        if (closeIndex === -1) {
+          throw new Error("Unclosed seqP block.");
+        }
+
+        const inner = source.slice(openIndex + 1, closeIndex);
+        sequences.push(splitTopLevel(inner, "comma").filter(Boolean));
+        regex.lastIndex = closeIndex + 1;
+      }
+
+      return sequences;
+    }
+
+    function scaleSequenceEvents(events, segment, trackName) {
+      return events.map((event) => ({
+        ...event,
+        track: trackName,
+        segmentStart: segment.start,
+        segmentDuration: segment.duration,
+        start: segment.start + (event.start * segment.duration),
+        duration: event.duration * segment.duration
+      }));
+    }
+
+    function sequenceStepsFromSource(source) {
+      const sequences = extractSeqBlocks(source);
+      if (sequences.length) {
+        return sequences.flat();
+      }
+
+      const trimmed = source.trim();
+      return trimmed ? [trimmed] : [];
+    }
+
+    function parseArrangement(source) {
+      const sanitized = stripLineComments(source);
+      const trackBlocks = extractTrackBlocks(sanitized);
+
+      if (!trackBlocks.length) {
+        const steps = sequenceStepsFromSource(sanitized);
+        const segments = steps.map((step, index) => ({
+          start: index,
+          duration: 1,
+          source: step,
+          name: `seq-${index + 1}`,
+          events: scaleSequenceEvents(parseSource(step, { allowEmpty: true }), { start: index, duration: 1 }, "track-1")
+        }));
+        return {
+          totalLength: Math.max(1, segments.length),
+          tracks: [
+            {
+              name: "track-1",
+              segments,
+              events: segments.flatMap((segment) => segment.events)
+            }
+          ]
+        };
+      }
+
+      const tracks = trackBlocks.map((trackBlock, trackIndex) => {
+        const segments = sequenceStepsFromSource(trackBlock.body).map((step, stepIndex) => {
+          const stepDef = {
+            start: stepIndex,
+            duration: 1
+          };
+          return {
+            ...stepDef,
+            source: step,
+            name: `seq-${stepIndex + 1}`,
+            events: step ? scaleSequenceEvents(parseSource(step, { allowEmpty: true }), stepDef, trackBlock.name) : []
+          };
+        });
+
+        return {
+          name: trackBlock.name || `track-${trackIndex + 1}`,
+          segments,
+          events: segments.flatMap((segment) => segment.events)
+        };
+      });
+
+      return {
+        totalLength: Math.max(1, ...tracks.flatMap((track) => track.segments.map((segment) => segment.start + segment.duration))),
+        tracks
+      };
+    }
+
+    function instrumentColorMap(events) {
+      const instruments = [...new Set(events.map((event) => event.instrument))];
+      return new Map(instruments.map((name, index) => [name, palette[index % palette.length]]));
+    }
+
+    function pitchRange(events) {
+      const pitches = events.map((event) => event.pitch);
+      const min = Math.min(...pitches);
+      const max = Math.max(...pitches);
+      const span = Math.max(8, max - min + 1);
+
+      return {
+        min: Math.max(0, min - 1),
+        max: Math.min(127, min + span)
+      };
+    }
+
+    function noteName(midi) {
+      const names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+      const octave = Math.floor(midi / 12) - 1;
+      return `${names[midi % 12]}${octave}`;
+    }
+
+    function renderArrangement(arrangement) {
+      const allEvents = arrangement.tracks.flatMap((track) => track.events);
+      const width = 980;
+      const trackHeight = 164;
+      const height = Math.max(360, 54 + arrangement.tracks.length * trackHeight);
+      const margin = { top: 26, right: 18, bottom: 28, left: 96 };
+      const innerWidth = width - margin.left - margin.right;
+      const totalLength = Math.max(1, arrangement.totalLength);
+      const colorMap = instrumentColorMap(allEvents);
+      const parts = [];
+
+      svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+      parts.push(`<rect width="${width}" height="${height}" fill="#fffaf0"></rect>`);
+
+      for (let tick = 0; tick <= totalLength * 4; tick += 1) {
+        const x = margin.left + (innerWidth * tick) / (totalLength * 4);
+        const isCycle = tick % 4 === 0;
+        parts.push(`<line x1="${x}" y1="${margin.top}" x2="${x}" y2="${height - margin.bottom}" stroke="${isCycle ? "rgba(53,46,31,0.22)" : "rgba(53,46,31,0.08)"}" stroke-width="${isCycle ? 1.2 : 1}"></line>`);
+        if (tick < totalLength * 4 && isCycle) {
+          parts.push(`<text x="${x + 4}" y="16" fill="#6d665a" font-family="IBM Plex Mono, monospace" font-size="11">${tick / 4}</text>`);
+        }
+      }
+
+      arrangement.tracks.forEach((track, trackIndex) => {
+        const top = margin.top + trackIndex * trackHeight;
+        const laneY = top + 10;
+        const laneHeight = trackHeight - 18;
+        const trackRange = track.events.length ? pitchRange(track.events) : { min: 60, max: 68 };
+        const pitchCount = trackRange.max - trackRange.min + 1;
+        const rowHeight = laneHeight / pitchCount;
+
+        parts.push(`<rect x="10" y="${top}" width="${width - 20}" height="${trackHeight - 2}" rx="18" fill="rgba(255,255,255,0.5)" stroke="rgba(31,31,27,0.08)"></rect>`);
+        parts.push(`<text x="26" y="${top + 30}" fill="#1f1f1b" font-family="Space Grotesk, sans-serif" font-size="18" font-weight="700">${track.name}</text>`);
+        parts.push(`<text x="26" y="${top + 50}" fill="#6d665a" font-family="IBM Plex Mono, monospace" font-size="11">${track.segments.length} seq step${track.segments.length === 1 ? "" : "s"}</text>`);
+
+        for (let pitch = trackRange.min; pitch <= trackRange.max; pitch += 1) {
+          const row = trackRange.max - pitch;
+          const y = laneY + row * rowHeight;
+          const isBlack = [1, 3, 6, 8, 10].includes(pitch % 12);
+          parts.push(`<rect x="${margin.left}" y="${y}" width="${innerWidth}" height="${rowHeight}" fill="${isBlack ? "rgba(17,17,17,0.035)" : "rgba(255,255,255,0.09)"}"></rect>`);
+          parts.push(`<line x1="${margin.left}" y1="${y}" x2="${width - margin.right}" y2="${y}" stroke="rgba(53,46,31,0.06)" stroke-width="1"></line>`);
+        }
+
+        parts.push(`<text x="${margin.left - 10}" y="${laneY + 12}" text-anchor="end" fill="#6d665a" font-family="IBM Plex Mono, monospace" font-size="11">${noteName(trackRange.max)}</text>`);
+        parts.push(`<text x="${margin.left - 10}" y="${laneY + laneHeight - 4}" text-anchor="end" fill="#6d665a" font-family="IBM Plex Mono, monospace" font-size="11">${noteName(trackRange.min)}</text>`);
+
+        track.segments.forEach((segment, segmentIndex) => {
+          const segmentX = margin.left + (segment.start / totalLength) * innerWidth;
+          const segmentWidth = Math.max(10, (segment.duration / totalLength) * innerWidth);
+          parts.push(`<rect x="${segmentX}" y="${laneY}" width="${segmentWidth}" height="${laneHeight}" rx="14" fill="rgba(22,66,60,0.04)" stroke="rgba(22,66,60,0.2)" stroke-dasharray="5 5"></rect>`);
+          parts.push(`<text x="${segmentX + 8}" y="${laneY + 16}" fill="#16423c" font-family="IBM Plex Mono, monospace" font-size="10">seq ${segmentIndex + 1}</text>`);
+        });
+
+        track.events.forEach((event) => {
+          const x = margin.left + (event.start / totalLength) * innerWidth;
+          const w = Math.max(6, (event.duration / totalLength) * innerWidth - 2);
+          const y = laneY + (trackRange.max - event.pitch) * rowHeight + 2;
+          const h = Math.max(8, rowHeight - 4);
+          const fill = colorMap.get(event.instrument);
+          const label = `${event.instrument}: ${event.label}`;
+          parts.push(`<rect x="${x + 1}" y="${y}" width="${w}" height="${h}" rx="7" fill="${fill}" opacity="0.9"></rect>`);
+          parts.push(`<rect x="${x + 1}" y="${y}" width="${w}" height="${h}" rx="7" fill="none" stroke="rgba(0,0,0,0.14)"></rect>`);
+          if (w > 44 && h > 13) {
+            parts.push(`<text x="${x + 7}" y="${y + h * 0.62}" fill="rgba(255,255,255,0.9)" font-family="IBM Plex Mono, monospace" font-size="10">${label}</text>`);
+          }
+        });
+      });
+
+      svg.innerHTML = parts.join("");
+      legend.innerHTML = "";
+      [...colorMap.entries()].forEach(([instrument, color]) => {
+        const item = document.createElement("div");
+        item.className = "legend-item";
+        item.innerHTML = `<span class="legend-swatch" style="background:${color}"></span><span>${instrument}</span>`;
+        legend.appendChild(item);
+      });
+    }
+
+    function renderEmptyState(message) {
+      svg.setAttribute("viewBox", "0 0 980 520");
+      svg.innerHTML = [
+        `<rect width="980" height="520" fill="#fffaf0"></rect>`,
+        `<text x="490" y="248" text-anchor="middle" fill="#6d665a" font-family="IBM Plex Mono, monospace" font-size="18">No notes to display</text>`,
+        `<text x="490" y="278" text-anchor="middle" fill="#8b8477" font-family="IBM Plex Mono, monospace" font-size="12">${message}</text>`
+      ].join("");
+      legend.innerHTML = "";
+    }
+
+    function executePattern() {
+      try {
+        const arrangement = parseArrangement(input.value);
+        const events = arrangement.tracks.flatMap((track) => track.events);
+        if (!events.length) {
+          throw new Error("No playable events were parsed. The pattern is empty or fully commented out.");
+        }
+        renderArrangement(arrangement);
+        const instruments = [...new Set(events.map((event) => event.instrument))];
+        const stepCount = arrangement.tracks.reduce((sum, track) => sum + track.segments.length, 0);
+        status.textContent = `Rendered ${events.length} events across ${arrangement.tracks.length} track${arrangement.tracks.length === 1 ? "" : "s"}, ${stepCount} seq step${stepCount === 1 ? "" : "s"}, and ${instruments.length} instrument${instruments.length === 1 ? "" : "s"}.`;
+      } catch (error) {
+        renderEmptyState("Pattern empty after parsing");
+        status.textContent = error.message;
+      }
+    }
+
+    runButton.addEventListener("click", executePattern);
+    input.addEventListener("keydown", (event) => {
+      if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+        event.preventDefault();
+        executePattern();
+      }
+    });
+
+    executePattern();
+  </script>
+</body>
+</html>
