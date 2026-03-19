@@ -6,18 +6,17 @@
   <title>Tidal Clip Prototype</title>
   <style>
     :root {
-      --bg: #f6f1e8;
-      --panel: rgba(255, 252, 246, 0.88);
-      --panel-strong: #fffaf0;
-      --ink: #1f1f1b;
-      --muted: #6d665a;
-      --grid: rgba(53, 46, 31, 0.12);
-      --grid-strong: rgba(53, 46, 31, 0.22);
-      --accent: #16423c;
-      --accent-soft: #dcece8;
-      --border: rgba(31, 31, 27, 0.16);
-      --shadow: 0 24px 60px rgba(34, 24, 7, 0.14);
-      --radius: 20px;
+      --bg: #0d1016;
+      --bg-alt: #121722;
+      --panel: #131926;
+      --panel-strong: #0f141e;
+      --ink: #edf2ff;
+      --muted: #93a0ba;
+      --accent: #7ae582;
+      --accent-soft: rgba(122, 229, 130, 0.12);
+      --border: #232b3c;
+      --radius: 14px;
+      --drawer-width: 80ch;
       --mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
       --sans: "Space Grotesk", "Avenir Next", "Segoe UI", sans-serif;
     }
@@ -31,98 +30,114 @@
       min-height: 100vh;
       font-family: var(--sans);
       color: var(--ink);
+      overflow: hidden;
       background:
-        radial-gradient(circle at top left, rgba(254, 211, 48, 0.22), transparent 28%),
-        radial-gradient(circle at right 20%, rgba(22, 66, 60, 0.16), transparent 24%),
-        linear-gradient(180deg, #efe7da 0%, var(--bg) 48%, #ede6dc 100%);
+        linear-gradient(180deg, rgba(54, 73, 115, 0.18), transparent 180px),
+        linear-gradient(180deg, var(--bg) 0%, #0a0d13 100%);
     }
 
     .shell {
-      width: min(1180px, calc(100vw - 32px));
-      margin: 24px auto;
+      width: 100%;
+      height: 100vh;
       display: grid;
-      gap: 18px;
+      gap: 12px;
     }
 
     .hero,
     .panel {
       background: var(--panel);
-      backdrop-filter: blur(16px);
       border: 1px solid var(--border);
-      box-shadow: var(--shadow);
-      border-radius: var(--radius);
+      border-radius: 0;
+      overflow: hidden;
     }
 
     .hero {
-      padding: 22px 24px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      min-height: 52px;
+      padding: 10px 18px;
+      border-left: 0;
+      border-right: 0;
+      border-top: 0;
+      background: #101521;
     }
 
-    .eyebrow {
-      margin: 0 0 8px;
-      text-transform: uppercase;
-      letter-spacing: 0.12em;
-      font-size: 0.73rem;
-      color: var(--muted);
+    .hero-copy {
+      display: flex;
+      align-items: center;
+      min-width: 0;
     }
 
     h1 {
       margin: 0;
-      font-size: clamp(2rem, 4vw, 3.6rem);
-      line-height: 0.95;
-      letter-spacing: -0.04em;
+      font-size: 1rem;
+      line-height: 1;
+      letter-spacing: 0.02em;
+      font-weight: 700;
     }
 
-    .lede {
-      max-width: 60rem;
-      margin: 14px 0 0;
-      color: var(--muted);
-      font-size: 1rem;
-      line-height: 1.5;
+    .hero-controls {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 10px;
+      flex-wrap: wrap;
     }
 
     .workspace {
       display: grid;
-      gap: 18px;
-      grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.9fr);
+      gap: 12px;
+      grid-template-columns: 1fr;
       align-items: start;
+      padding: 0 12px 12px;
+      min-height: 0;
     }
 
-    .panel {
-      overflow: hidden;
+    .arrangement-panel {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      min-height: 0;
+      height: calc(100vh - 90px);
     }
 
     .panel-header {
       display: flex;
       justify-content: space-between;
-      align-items: baseline;
+      align-items: center;
       gap: 16px;
-      padding: 18px 20px 12px;
+      padding: 12px 14px 10px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-alt);
     }
 
     .panel-title {
       margin: 0;
-      font-size: 1.1rem;
+      font-size: 0.92rem;
       letter-spacing: -0.02em;
     }
 
     .panel-note {
       margin: 0;
       color: var(--muted);
-      font-size: 0.88rem;
+      font-size: 0.8rem;
     }
 
     .roll-wrap {
-      padding: 0 18px 18px;
+      display: grid;
+      grid-template-rows: minmax(0, 1fr) auto;
+      min-height: 0;
+      padding: 12px;
     }
 
     .roll-frame {
-      background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0.32)),
-        var(--panel-strong);
-      border: 1px solid rgba(31, 31, 27, 0.08);
-      border-radius: 18px;
+      background: var(--panel-strong);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
       overflow: hidden;
-      min-height: 440px;
+      min-height: 0;
+      height: 100%;
     }
 
     svg {
@@ -134,19 +149,20 @@
     .legend {
       display: flex;
       flex-wrap: wrap;
-      gap: 10px;
-      padding: 14px 2px 0;
+      gap: 8px;
+      padding: 10px 0 0;
     }
 
     .legend-item {
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      padding: 7px 11px;
+      padding: 6px 10px;
       border-radius: 999px;
-      background: rgba(255, 255, 255, 0.7);
-      border: 1px solid rgba(31, 31, 27, 0.08);
-      font-size: 0.82rem;
+      background: #0f141e;
+      border: 1px solid var(--border);
+      color: var(--ink);
+      font-size: 0.8rem;
     }
 
     .legend-swatch {
@@ -157,7 +173,9 @@
     }
 
     .editor {
-      padding: 0 20px 20px;
+      padding: 12px 14px 14px;
+      height: 100%;
+      overflow: auto;
     }
 
     .toolbar {
@@ -166,6 +184,7 @@
       align-items: center;
       gap: 12px;
       padding-bottom: 10px;
+      flex-wrap: wrap;
     }
 
     .kbd {
@@ -173,70 +192,120 @@
       font-size: 0.78rem;
       padding: 5px 8px;
       border-radius: 8px;
-      background: rgba(22, 66, 60, 0.08);
-      color: var(--accent);
-      border: 1px solid rgba(22, 66, 60, 0.16);
+      background: #0f141e;
+      color: var(--muted);
+      border: 1px solid var(--border);
+    }
+
+    .transport {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .field {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 0.82rem;
+      font-family: var(--mono);
+    }
+
+    .field select,
+    .field input {
+      appearance: none;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: #0f141e;
+      color: var(--ink);
+      padding: 9px 10px;
+      font: inherit;
+      min-height: 38px;
+    }
+
+    .field input {
+      width: 88px;
+    }
+
+    .field select {
+      min-width: 220px;
+    }
+
+    .button-row {
+      display: inline-flex;
+      gap: 8px;
+      flex-wrap: wrap;
     }
 
     button {
       appearance: none;
-      border: none;
-      border-radius: 12px;
-      background: var(--accent);
-      color: white;
-      padding: 12px 16px;
+      border: 1px solid #2b7a4b;
+      border-radius: 10px;
+      background: #163324;
+      color: #d9ffe0;
+      padding: 10px 14px;
       font: inherit;
       font-weight: 700;
       cursor: pointer;
-      box-shadow: 0 10px 24px rgba(22, 66, 60, 0.22);
-      transition: transform 140ms ease, box-shadow 140ms ease;
+      transition: background 140ms ease, border-color 140ms ease;
     }
 
     button:hover,
     button:focus-visible {
-      transform: translateY(-1px);
-      box-shadow: 0 14px 28px rgba(22, 66, 60, 0.26);
+      background: #1d412e;
+      border-color: #3f9a63;
     }
 
     textarea {
       width: 100%;
-      min-height: 440px;
+      min-height: 280px;
       resize: vertical;
-      border-radius: 18px;
-      padding: 18px;
-      border: 1px solid rgba(31, 31, 27, 0.12);
-      background: rgba(255, 254, 251, 0.9);
+      border-radius: var(--radius);
+      padding: 16px;
+      border: 1px solid var(--border);
+      background: #0f141e;
       color: var(--ink);
       font: 0.96rem/1.55 var(--mono);
       outline: none;
     }
 
     textarea:focus {
-      border-color: rgba(22, 66, 60, 0.36);
-      box-shadow: 0 0 0 4px rgba(22, 66, 60, 0.08);
+      border-color: #355a88;
+      box-shadow: 0 0 0 1px #355a88;
     }
 
     .status {
       min-height: 48px;
       margin-top: 12px;
       padding: 12px 14px;
-      border-radius: 14px;
-      background: rgba(22, 66, 60, 0.07);
-      color: var(--accent);
-      border: 1px solid rgba(22, 66, 60, 0.12);
+      border-radius: var(--radius);
+      background: #101724;
+      color: #b9c6df;
+      border: 1px solid var(--border);
       font-size: 0.9rem;
       line-height: 1.45;
+    }
+
+    .editor-drawer > .status {
+      margin-top: 0;
+      border-radius: 0;
+      border-left: 0;
+      border-right: 0;
+      border-bottom: 0;
+      background: var(--bg-alt);
     }
 
     .guide {
       display: grid;
       gap: 10px;
-      padding: 0 20px 20px;
+      padding: 0 14px 14px;
     }
 
     .guide code {
       font-family: var(--mono);
-      background: rgba(31, 31, 27, 0.05);
+      background: #0f141e;
       padding: 0.12rem 0.28rem;
       border-radius: 5px;
     }
@@ -244,13 +313,105 @@
     .guide p {
       margin: 0;
       color: var(--muted);
-      font-size: 0.92rem;
+      font-size: 0.88rem;
       line-height: 1.5;
     }
 
+    .editor-drawer {
+      position: fixed;
+      top: 64px;
+      right: 0;
+      bottom: 12px;
+      width: min(var(--drawer-width), calc(100vw - 24px));
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-right: 0;
+      border-radius: 14px 0 0 14px;
+      transform: translateX(100%);
+      transition: transform 180ms ease;
+      z-index: 30;
+      overflow: visible;
+    }
+
+    body.drawer-open .editor-drawer {
+      transform: translateX(0);
+    }
+
+    .drawer-handle {
+      position: absolute;
+      top: 50%;
+      left: -34px;
+      transform: translateY(-50%);
+      width: 34px;
+      height: 152px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid #43506a;
+      border-right: 0;
+      border-radius: 16px 0 0 16px;
+      background:
+        linear-gradient(180deg, #1c2740 0%, #141c2c 100%);
+      color: #dbe7ff;
+      cursor: pointer;
+      writing-mode: vertical-rl;
+      text-orientation: mixed;
+      font: 0.74rem var(--mono);
+      font-weight: 700;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05);
+      transition: background 140ms ease, color 140ms ease, left 140ms ease, width 140ms ease;
+    }
+
+    .drawer-handle:hover,
+    .drawer-handle:focus-visible {
+      left: -38px;
+      width: 38px;
+      color: #ffffff;
+      background:
+        linear-gradient(180deg, #2a3b62 0%, #1b2842 100%);
+    }
+
+    .drawer-body {
+      min-height: 0;
+      overflow: auto;
+      padding: 0;
+    }
+
+    .drawer-body .editor {
+      height: 100%;
+      display: flex;
+      padding: 0;
+    }
+
+    .drawer-body textarea {
+      height: 100%;
+      min-height: 100%;
+      border: 0;
+      border-radius: 0;
+    }
+
     @media (max-width: 980px) {
-      .workspace {
-        grid-template-columns: 1fr;
+      .hero {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .hero-controls {
+        justify-content: flex-start;
+      }
+
+      .editor-drawer {
+        top: 116px;
+        bottom: 12px;
+        width: min(var(--drawer-width), calc(100vw - 12px));
+      }
+
+      .arrangement-panel {
+        height: calc(100vh - 142px);
       }
 
       .roll-frame,
@@ -263,20 +424,35 @@
 <body>
   <main class="shell">
     <section class="hero">
-      <p class="eyebrow">Static HTML Proof of Concept</p>
-      <h1>Tidal Pattern to Piano Roll</h1>
-      <p class="lede">
-        Enter a Tidal-style pattern, press <strong>Ctrl+Enter</strong> or <strong>Cmd+Enter</strong>, and the page
-        replaces the current arrangement with a fresh piano-roll view. Multiple instruments share one grid and are color-coded.
-      </p>
+      <div class="hero-copy">
+        <h1>Tidal Pattern Arranger</h1>
+      </div>
+      <div class="hero-controls">
+        <div class="kbd">Ctrl/Cmd + Enter</div>
+        <label class="field">
+          <span>MIDI Out</span>
+          <select id="midi-output">
+            <option value="">No MIDI output</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>BPM</span>
+          <input id="bpm-input" type="number" min="30" max="240" step="1" value="120">
+        </label>
+        <div class="button-row">
+          <button id="run-button" type="button">Execute Pattern</button>
+          <button id="midi-refresh-button" type="button">Refresh MIDI</button>
+          <button id="play-button" type="button">Play</button>
+          <button id="stop-button" type="button">Stop</button>
+        </div>
+      </div>
     </section>
 
     <section class="workspace">
-      <section class="panel">
+      <section class="panel arrangement-panel">
         <header class="panel-header">
           <div>
             <h2 class="panel-title">Arrangement View</h2>
-            <p class="panel-note">Tracks rendered as a DAW-style piano roll</p>
           </div>
           <p class="panel-note">16-step guide grid</p>
         </header>
@@ -287,19 +463,18 @@
           <div id="legend" class="legend" aria-label="Instrument legend"></div>
         </div>
       </section>
+    </section>
 
-      <section class="panel">
-        <header class="panel-header">
-          <div>
-            <h2 class="panel-title">Pattern Input</h2>
-            <p class="panel-note">Subset parser for Tidal-style mini-notation</p>
-          </div>
-        </header>
+    <aside id="editor-drawer" class="editor-drawer panel" aria-label="Pattern editor drawer">
+      <button id="drawer-handle" class="drawer-handle" type="button" aria-expanded="false" aria-controls="pattern-input">Pattern</button>
+      <header class="panel-header">
+        <div>
+          <h2 class="panel-title">Pattern Input</h2>
+        </div>
+        <p class="panel-note">Arrangement source</p>
+      </header>
+      <div class="drawer-body">
         <div class="editor">
-          <div class="toolbar">
-            <div class="kbd">Ctrl/Cmd + Enter</div>
-            <button id="run-button" type="button">Execute Pattern</button>
-          </div>
           <textarea id="pattern-input" spellcheck="false">track drums {
   seqP [
     stack [
@@ -322,15 +497,10 @@ track synth {
     ]
   ]
 }</textarea>
-          <div id="status" class="status" aria-live="polite"></div>
         </div>
-        <div class="guide">
-          <p><code>track drums { seqP [ stack [ ... ], stack [ ... ] ] }</code> creates a track from a time-ordered sequence of patterns.</p>
-          <p><code>[ ... ]</code> subdivides time inside a step. <code>*4</code> repeats inside the current span. <code>~</code> creates a rest.</p>
-          <p>Inside each <code>seqP</code> step, use <code>s "bd cp hh"</code>, <code>n "c4 e4 g4" # s "lead"</code>, or <code>stack [ ... ]</code>. Plain stack syntax still works and becomes a default single-step track.</p>
-        </div>
-      </section>
-    </section>
+      </div>
+      <div class="status" id="status" aria-live="polite"></div>
+    </aside>
   </main>
 
   <script>
@@ -339,6 +509,23 @@ track synth {
     const input = document.getElementById("pattern-input");
     const status = document.getElementById("status");
     const runButton = document.getElementById("run-button");
+    const playButton = document.getElementById("play-button");
+    const stopButton = document.getElementById("stop-button");
+    const midiRefreshButton = document.getElementById("midi-refresh-button");
+    const midiOutputSelect = document.getElementById("midi-output");
+    const bpmInput = document.getElementById("bpm-input");
+    const editorDrawer = document.getElementById("editor-drawer");
+    const drawerHandle = document.getElementById("drawer-handle");
+
+    let midiAccess = null;
+    let currentArrangement = null;
+    let currentEvents = [];
+    let activeEventIds = new Set();
+    let playbackTimer = null;
+    let playbackStopTimer = null;
+    let playbackStartedAt = 0;
+    let playbackLoopDurationMs = 0;
+    let playbackToken = 0;
 
     const palette = [
       "#d85f45",
@@ -750,6 +937,7 @@ track synth {
         instrument: resolveInstrument(token, voice),
         label: token,
         pitch,
+        isDrum: voice.mode !== "pitched" && typeof drumNotes[token.toLowerCase()] === "number",
         start,
         duration
       });
@@ -782,9 +970,35 @@ track synth {
       return fallbackBase;
     }
 
+    function scaleEventsIntoWindow(events, startOffset, durationScale) {
+      return events.map((event) => ({
+        ...event,
+        start: startOffset + (event.start * durationScale),
+        duration: event.duration * durationScale
+      }));
+    }
+
     function parseSource(source, options = {}) {
       const { allowEmpty = false } = options;
       const sanitized = stripLineComments(source);
+      const repeated = splitRepeat(sanitized.trim());
+
+      if (repeated && repeated.base) {
+        const repeatedEvents = [];
+        const sliceDuration = 1 / repeated.count;
+
+        for (let i = 0; i < repeated.count; i += 1) {
+          const baseEvents = parseSource(repeated.base, { allowEmpty: true });
+          repeatedEvents.push(...scaleEventsIntoWindow(baseEvents, i * sliceDuration, sliceDuration));
+        }
+
+        if (!repeatedEvents.length && !allowEmpty) {
+          throw new Error("No playable events were parsed. The pattern is empty or fully commented out.");
+        }
+
+        return repeatedEvents.sort((a, b) => a.start - b.start || b.pitch - a.pitch);
+      }
+
       const voices = normalizeVoiceList(sanitized).map(voiceFromExpression);
       const events = [];
 
@@ -984,19 +1198,212 @@ track synth {
       return `${names[midi % 12]}${octave}`;
     }
 
+    function setDrawerOpen(isOpen) {
+      document.body.classList.toggle("drawer-open", isOpen);
+      drawerHandle.setAttribute("aria-expanded", isOpen ? "true" : "false");
+      drawerHandle.textContent = isOpen ? "Hide Pattern" : "Pattern";
+    }
+
+    function toggleDrawer() {
+      setDrawerOpen(!document.body.classList.contains("drawer-open"));
+    }
+
+    function assignEventIds(arrangement) {
+      let nextId = 1;
+      arrangement.tracks.forEach((track, trackIndex) => {
+        track.segments.forEach((segment, segmentIndex) => {
+          segment.events.forEach((event) => {
+            event.id = `t${trackIndex + 1}-s${segmentIndex + 1}-e${nextId}`;
+            event.channel = event.isDrum ? 9 : trackIndex % 9;
+            event.velocity = event.isDrum ? 108 : 92;
+            nextId += 1;
+          });
+        });
+        track.events = track.segments.flatMap((segment) => segment.events);
+      });
+
+      return arrangement;
+    }
+
+    function getSelectedBpm() {
+      const parsed = Number.parseFloat(bpmInput.value);
+      if (!Number.isFinite(parsed)) {
+        return 120;
+      }
+      return Math.max(30, Math.min(240, parsed));
+    }
+
+    function getStepDurationMs() {
+      return (60000 / getSelectedBpm()) * 4;
+    }
+
+    function getSelectedMidiOutput() {
+      if (!midiAccess) {
+        return null;
+      }
+      return midiAccess.outputs.get(midiOutputSelect.value) || null;
+    }
+
+    function clearActiveHighlights() {
+      activeEventIds.forEach((eventId) => setEventHighlight(eventId, false));
+      activeEventIds.clear();
+    }
+
+    function setEventHighlight(eventId, isActive) {
+      const group = svg.querySelector(`[data-event-id="${eventId}"]`);
+      if (!group) {
+        return;
+      }
+
+      const body = group.querySelector(".note-body");
+      const outline = group.querySelector(".note-outline");
+      const label = group.querySelector(".note-label");
+
+      if (body) {
+        body.setAttribute("opacity", isActive ? "1" : "0.9");
+        body.setAttribute("filter", isActive ? "url(#note-glow)" : "");
+      }
+
+      if (outline) {
+        outline.setAttribute("stroke", isActive ? "rgba(255,255,255,0.95)" : "rgba(0,0,0,0.14)");
+        outline.setAttribute("stroke-width", isActive ? "1.8" : "1");
+      }
+
+      if (label) {
+        label.setAttribute("fill", isActive ? "rgba(255,255,255,1)" : "rgba(255,255,255,0.9)");
+      }
+    }
+
+    function sendAllNotesOff() {
+      const output = getSelectedMidiOutput();
+      if (!output) {
+        return;
+      }
+
+      for (let channel = 0; channel < 16; channel += 1) {
+        output.send([0xB0 + channel, 123, 0]);
+      }
+    }
+
+    function clearPlaybackTimers() {
+      if (playbackTimer !== null) {
+        clearInterval(playbackTimer);
+        playbackTimer = null;
+      }
+
+      if (playbackStopTimer !== null) {
+        clearTimeout(playbackStopTimer);
+        playbackStopTimer = null;
+      }
+    }
+
+    function stopPlayback(options = {}) {
+      const { preserveStatus = false } = options;
+      playbackToken += 1;
+      clearPlaybackTimers();
+      sendAllNotesOff();
+      clearActiveHighlights();
+      playButton.textContent = "Play";
+      if (!preserveStatus && status.textContent.startsWith("Playing")) {
+        status.textContent = "Playback stopped.";
+      }
+    }
+
+    function triggerEvent(event, output, token) {
+      activeEventIds.add(event.id);
+      setEventHighlight(event.id, true);
+      if (output) {
+        output.send([0x90 + event.channel, event.pitch, event.velocity]);
+      }
+
+      window.setTimeout(() => {
+        if (playbackToken !== token) {
+          return;
+        }
+        activeEventIds.delete(event.id);
+        setEventHighlight(event.id, false);
+        if (output) {
+          output.send([0x80 + event.channel, event.pitch, 0]);
+        }
+      }, Math.max(40, event.duration * getStepDurationMs() - 8));
+    }
+
+    function schedulePlaybackPass(startedAt) {
+      const output = getSelectedMidiOutput();
+      const token = playbackToken;
+      const stepDurationMs = getStepDurationMs();
+      currentEvents.forEach((event) => {
+        const eventDelay = Math.max(0, event.start * stepDurationMs);
+        window.setTimeout(() => {
+          if (playbackStartedAt !== startedAt || playbackToken !== token) {
+            return;
+          }
+          triggerEvent(event, output, token);
+        }, eventDelay);
+      });
+    }
+
+    async function refreshMidiOutputs() {
+      if (!navigator.requestMIDIAccess) {
+        midiOutputSelect.innerHTML = `<option value="">Web MIDI unavailable</option>`;
+        return null;
+      }
+
+      try {
+        midiAccess = await navigator.requestMIDIAccess();
+        const outputs = [...midiAccess.outputs.values()];
+        const previousValue = midiOutputSelect.value;
+        midiOutputSelect.innerHTML = `<option value="">No MIDI output</option>`;
+        outputs.forEach((output) => {
+          const option = document.createElement("option");
+          option.value = output.id;
+          option.textContent = output.name || output.manufacturer || output.id;
+          midiOutputSelect.appendChild(option);
+        });
+        if (outputs.some((output) => output.id === previousValue)) {
+          midiOutputSelect.value = previousValue;
+        }
+        return midiAccess;
+      } catch (error) {
+        midiOutputSelect.innerHTML = `<option value="">MIDI access denied</option>`;
+        throw error;
+      }
+    }
+
+    function startPlayback() {
+      if (!currentEvents.length) {
+        status.textContent = "Nothing to play. Execute a pattern first.";
+        return;
+      }
+
+      stopPlayback({ preserveStatus: true });
+      playbackStartedAt = performance.now();
+      playbackToken += 1;
+      playbackLoopDurationMs = currentArrangement.totalLength * getStepDurationMs();
+      schedulePlaybackPass(playbackStartedAt);
+      playbackTimer = window.setInterval(() => {
+        schedulePlaybackPass(playbackStartedAt);
+      }, playbackLoopDurationMs);
+      playButton.textContent = "Playing";
+      status.textContent = `Playing ${currentEvents.length} notes at ${getSelectedBpm()} BPM${getSelectedMidiOutput() ? " via MIDI output" : " with visual highlighting only"}.`;
+    }
+
     function renderArrangement(arrangement) {
       const allEvents = arrangement.tracks.flatMap((track) => track.events);
       const width = 980;
-      const trackHeight = 164;
-      const height = Math.max(360, 54 + arrangement.tracks.length * trackHeight);
+      const height = 520;
       const margin = { top: 26, right: 18, bottom: 28, left: 96 };
       const innerWidth = width - margin.left - margin.right;
+      const innerHeight = height - margin.top - margin.bottom;
       const totalLength = Math.max(1, arrangement.totalLength);
+      const trackCount = Math.max(1, arrangement.tracks.length);
+      const trackHeight = innerHeight / trackCount;
       const colorMap = instrumentColorMap(allEvents);
       const parts = [];
 
       svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
       parts.push(`<rect width="${width}" height="${height}" fill="#fffaf0"></rect>`);
+      parts.push(`<defs><filter id="note-glow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="0" stdDeviation="5" flood-color="#ffffff" flood-opacity="0.45"></feDropShadow></filter></defs>`);
 
       for (let tick = 0; tick <= totalLength * 4; tick += 1) {
         const x = margin.left + (innerWidth * tick) / (totalLength * 4);
@@ -1009,15 +1416,21 @@ track synth {
 
       arrangement.tracks.forEach((track, trackIndex) => {
         const top = margin.top + trackIndex * trackHeight;
-        const laneY = top + 10;
-        const laneHeight = trackHeight - 18;
+        const laneY = top + 8;
+        const laneHeight = Math.max(28, trackHeight - 14);
         const trackRange = track.events.length ? pitchRange(track.events) : { min: 60, max: 68 };
         const pitchCount = trackRange.max - trackRange.min + 1;
         const rowHeight = laneHeight / pitchCount;
+        const titleFontSize = trackHeight > 90 ? 18 : trackHeight > 64 ? 15 : 12;
+        const metaFontSize = trackHeight > 64 ? 11 : 9;
+        const showMeta = trackHeight > 48;
+        const cornerRadius = Math.max(8, Math.min(18, trackHeight * 0.16));
 
-        parts.push(`<rect x="10" y="${top}" width="${width - 20}" height="${trackHeight - 2}" rx="18" fill="rgba(255,255,255,0.5)" stroke="rgba(31,31,27,0.08)"></rect>`);
-        parts.push(`<text x="26" y="${top + 30}" fill="#1f1f1b" font-family="Space Grotesk, sans-serif" font-size="18" font-weight="700">${track.name}</text>`);
-        parts.push(`<text x="26" y="${top + 50}" fill="#6d665a" font-family="IBM Plex Mono, monospace" font-size="11">${track.segments.length} seq step${track.segments.length === 1 ? "" : "s"}</text>`);
+        parts.push(`<rect x="10" y="${top}" width="${width - 20}" height="${Math.max(24, trackHeight - 2)}" rx="${cornerRadius}" fill="rgba(255,255,255,0.5)" stroke="rgba(31,31,27,0.08)"></rect>`);
+        parts.push(`<text x="26" y="${top + Math.min(28, trackHeight * 0.45)}" fill="#1f1f1b" font-family="Space Grotesk, sans-serif" font-size="${titleFontSize}" font-weight="700">${track.name}</text>`);
+        if (showMeta) {
+          parts.push(`<text x="26" y="${top + Math.min(48, trackHeight * 0.72)}" fill="#6d665a" font-family="IBM Plex Mono, monospace" font-size="${metaFontSize}">${track.segments.length} seq step${track.segments.length === 1 ? "" : "s"}</text>`);
+        }
 
         for (let pitch = trackRange.min; pitch <= trackRange.max; pitch += 1) {
           const row = trackRange.max - pitch;
@@ -1027,14 +1440,18 @@ track synth {
           parts.push(`<line x1="${margin.left}" y1="${y}" x2="${width - margin.right}" y2="${y}" stroke="rgba(53,46,31,0.06)" stroke-width="1"></line>`);
         }
 
-        parts.push(`<text x="${margin.left - 10}" y="${laneY + 12}" text-anchor="end" fill="#6d665a" font-family="IBM Plex Mono, monospace" font-size="11">${noteName(trackRange.max)}</text>`);
-        parts.push(`<text x="${margin.left - 10}" y="${laneY + laneHeight - 4}" text-anchor="end" fill="#6d665a" font-family="IBM Plex Mono, monospace" font-size="11">${noteName(trackRange.min)}</text>`);
+        if (trackHeight > 54) {
+          parts.push(`<text x="${margin.left - 10}" y="${laneY + 12}" text-anchor="end" fill="#6d665a" font-family="IBM Plex Mono, monospace" font-size="${metaFontSize}">${noteName(trackRange.max)}</text>`);
+          parts.push(`<text x="${margin.left - 10}" y="${laneY + laneHeight - 4}" text-anchor="end" fill="#6d665a" font-family="IBM Plex Mono, monospace" font-size="${metaFontSize}">${noteName(trackRange.min)}</text>`);
+        }
 
         track.segments.forEach((segment, segmentIndex) => {
           const segmentX = margin.left + (segment.start / totalLength) * innerWidth;
           const segmentWidth = Math.max(10, (segment.duration / totalLength) * innerWidth);
-          parts.push(`<rect x="${segmentX}" y="${laneY}" width="${segmentWidth}" height="${laneHeight}" rx="14" fill="rgba(22,66,60,0.04)" stroke="rgba(22,66,60,0.2)" stroke-dasharray="5 5"></rect>`);
-          parts.push(`<text x="${segmentX + 8}" y="${laneY + 16}" fill="#16423c" font-family="IBM Plex Mono, monospace" font-size="10">seq ${segmentIndex + 1}</text>`);
+          parts.push(`<rect x="${segmentX}" y="${laneY}" width="${segmentWidth}" height="${laneHeight}" rx="${Math.max(6, Math.min(14, laneHeight * 0.14))}" fill="rgba(22,66,60,0.04)" stroke="rgba(22,66,60,0.2)" stroke-dasharray="5 5"></rect>`);
+          if (trackHeight > 50) {
+            parts.push(`<text x="${segmentX + 8}" y="${laneY + 16}" fill="#16423c" font-family="IBM Plex Mono, monospace" font-size="${metaFontSize}">seq ${segmentIndex + 1}</text>`);
+          }
         });
 
         track.events.forEach((event) => {
@@ -1044,11 +1461,13 @@ track synth {
           const h = Math.max(8, rowHeight - 4);
           const fill = colorMap.get(event.instrument);
           const label = `${event.instrument}: ${event.label}`;
-          parts.push(`<rect x="${x + 1}" y="${y}" width="${w}" height="${h}" rx="7" fill="${fill}" opacity="0.9"></rect>`);
-          parts.push(`<rect x="${x + 1}" y="${y}" width="${w}" height="${h}" rx="7" fill="none" stroke="rgba(0,0,0,0.14)"></rect>`);
+          parts.push(`<g data-event-id="${event.id}">`);
+          parts.push(`<rect class="note-body" x="${x + 1}" y="${y}" width="${w}" height="${h}" rx="7" fill="${fill}" opacity="${activeEventIds.has(event.id) ? "1" : "0.9"}"></rect>`);
+          parts.push(`<rect class="note-outline" x="${x + 1}" y="${y}" width="${w}" height="${h}" rx="7" fill="none" stroke="${activeEventIds.has(event.id) ? "rgba(255,255,255,0.95)" : "rgba(0,0,0,0.14)"}" stroke-width="${activeEventIds.has(event.id) ? "1.8" : "1"}"></rect>`);
           if (w > 44 && h > 13) {
-            parts.push(`<text x="${x + 7}" y="${y + h * 0.62}" fill="rgba(255,255,255,0.9)" font-family="IBM Plex Mono, monospace" font-size="10">${label}</text>`);
+            parts.push(`<text class="note-label" x="${x + 7}" y="${y + h * 0.62}" fill="rgba(255,255,255,0.9)" font-family="IBM Plex Mono, monospace" font-size="10">${label}</text>`);
           }
+          parts.push(`</g>`);
         });
       });
 
@@ -1063,6 +1482,7 @@ track synth {
     }
 
     function renderEmptyState(message) {
+      clearActiveHighlights();
       svg.setAttribute("viewBox", "0 0 980 520");
       svg.innerHTML = [
         `<rect width="980" height="520" fill="#fffaf0"></rect>`,
@@ -1074,29 +1494,53 @@ track synth {
 
     function executePattern() {
       try {
-        const arrangement = parseArrangement(input.value);
+        stopPlayback({ preserveStatus: true });
+        const arrangement = assignEventIds(parseArrangement(input.value));
         const events = arrangement.tracks.flatMap((track) => track.events);
         if (!events.length) {
           throw new Error("No playable events were parsed. The pattern is empty or fully commented out.");
         }
+        currentArrangement = arrangement;
+        currentEvents = events;
         renderArrangement(arrangement);
         const instruments = [...new Set(events.map((event) => event.instrument))];
         const stepCount = arrangement.tracks.reduce((sum, track) => sum + track.segments.length, 0);
         status.textContent = `Rendered ${events.length} events across ${arrangement.tracks.length} track${arrangement.tracks.length === 1 ? "" : "s"}, ${stepCount} seq step${stepCount === 1 ? "" : "s"}, and ${instruments.length} instrument${instruments.length === 1 ? "" : "s"}.`;
       } catch (error) {
+        currentArrangement = null;
+        currentEvents = [];
         renderEmptyState("Pattern empty after parsing");
         status.textContent = error.message;
       }
     }
 
     runButton.addEventListener("click", executePattern);
+    playButton.addEventListener("click", startPlayback);
+    stopButton.addEventListener("click", () => stopPlayback());
+    drawerHandle.addEventListener("click", toggleDrawer);
+    midiRefreshButton.addEventListener("click", async () => {
+      try {
+        await refreshMidiOutputs();
+        status.textContent = `MIDI outputs refreshed.${getSelectedMidiOutput() ? ` Selected: ${getSelectedMidiOutput().name || getSelectedMidiOutput().id}.` : ""}`;
+      } catch (error) {
+        status.textContent = `Unable to access Web MIDI: ${error.message}`;
+      }
+    });
     input.addEventListener("keydown", (event) => {
       if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
         event.preventDefault();
         executePattern();
       }
     });
+    document.addEventListener("keydown", (event) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "b") {
+        event.preventDefault();
+        toggleDrawer();
+      }
+    });
 
+    setDrawerOpen(true);
+    refreshMidiOutputs().catch(() => {});
     executePattern();
   </script>
 </body>
