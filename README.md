@@ -443,7 +443,55 @@ track drums {
 }
 ```
 
-### 14. Fallback Single-Step Parsing
+### 14. `ur`
+
+`ur` is the primary arrangement combinator. It builds a longer sequence from named patterns distributed across a fixed number of steps.
+
+Syntax:
+
+```tidal
+ur N "name1 name2 name3 ..."
+```
+
+- `N` — total number of steps in the expanded sequence
+- the quoted string — space-separated pattern names, each filling `N / count` steps
+- names are resolved from `let` bindings in the current scope
+
+Example:
+
+```tidal
+let verse = stack [
+  s "bd cp bd cp"
+]
+
+let chorus = stack [
+  s "bd*4",
+  n "c4 e4 g4 e4" # s "lead"
+]
+
+let bridge = stack [
+  s "hh*8"
+]
+
+track main {
+  seqP [
+    ur 12 "verse verse chorus verse verse chorus bridge chorus"
+  ]
+}
+```
+
+Here `ur 12 "..."` has 8 tokens so each fills `12 / 8 = 1.5` steps, rounded per token to distribute evenly.
+
+If the number of total steps divides evenly across all tokens, each named pattern is simply repeated the same number of times:
+
+```tidal
+-- 3 tokens × 4 steps each = 12 steps total
+ur 12 "a b c"
+```
+
+`ur` also accepts `name:effect` token syntax for named transformations (effects are reserved for future use and currently passed through unchanged).
+
+### 15. Fallback Single-Step Parsing
 
 If you do not use `track`, the parser still works.
 

@@ -135,14 +135,14 @@
       background: var(--panel-strong);
       border: 1px solid var(--border);
       border-radius: var(--radius);
-      overflow: hidden;
+      overflow-x: auto;
+      overflow-y: hidden;
       min-height: 0;
       height: 100%;
     }
 
     svg {
       display: block;
-      width: 100%;
       height: 100%;
     }
 
@@ -536,6 +536,7 @@ track resonance {
 
     let midiAccess = null;
     let currentArrangement = null;
+    let zoomX = 1.0;
     let currentEvents = [];
     let activeEventIds = new Set();
     let playbackTimer = null;
@@ -1224,6 +1225,36 @@ track resonance {
         return expandSequenceExpression(catParenMatch[1], env);
       }
 
+      // ur N "pat1 pat2 ..." — Tidal ur combinator: expands a pattern-of-patterns
+      // Each space-separated token in the quoted string fills N/tokens.length steps.
+      // Names are resolved from let bindings in env. Supports "name:effect" syntax
+      // (effects are currently passed through as-is for future use).
+      const urMatch = trimmed.match(/^ur\s+(\d+)\s+"([^"]*)"/);
+      if (urMatch) {
+        const totalSteps = Number.parseInt(urMatch[1], 10);
+        const patternString = urMatch[2].trim();
+        const tokens = patternString.split(/\s+/).filter(Boolean);
+        if (tokens.length === 0) return [];
+
+        const result = [];
+        for (let t = 0; t < tokens.length; t += 1) {
+          const token = tokens[t];
+          // Distribute totalSteps as evenly as possible across tokens
+          const slotStart = Math.round((t / tokens.length) * totalSteps);
+          const slotEnd = Math.round(((t + 1) / tokens.length) * totalSteps);
+          const slotCount = slotEnd - slotStart;
+
+          const colonIdx = token.indexOf(":");
+          const name = colonIdx >= 0 ? token.slice(0, colonIdx) : token;
+
+          const steps = env[name] || [name];
+          for (let i = 0; i < slotCount; i += 1) {
+            result.push(steps[i % steps.length]);
+          }
+        }
+        return result;
+      }
+
       return [trimmed];
     }
 
@@ -1610,7 +1641,7 @@ track resonance {
     function renderArrangement(arrangement) {
       const allEvents = arrangement.tracks.flatMap((track) => track.events);
       const rollFrame = svg.parentElement;
-      const width = Math.max(200, rollFrame.clientWidth);
+      const width = Math.max(200, rollFrame.clientWidth * zoomX);
       const height = Math.max(200, rollFrame.clientHeight);
       const margin = { top: 26, right: 18, bottom: 28, left: 96 };
       const innerWidth = width - margin.left - margin.right;
@@ -1621,6 +1652,8 @@ track resonance {
       const colorMap = instrumentColorMap(allEvents);
       const parts = [];
 
+      svg.setAttribute("width", width);
+      svg.setAttribute("height", height);
       svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
       parts.push(`<rect width="${width}" height="${height}" fill="#fffaf0"></rect>`);
       parts.push(`<defs><filter id="note-glow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="0" stdDeviation="5" flood-color="#ffffff" flood-opacity="0.45"></feDropShadow></filter></defs>`);
@@ -1802,9 +1835,12 @@ track resonance {
 
     function renderEmptyState(message) {
       clearActiveHighlights();
+      zoomX = 1.0;
       const rollFrame = svg.parentElement;
       const w = Math.max(200, rollFrame.clientWidth);
       const h = Math.max(200, rollFrame.clientHeight);
+      svg.setAttribute("width", w);
+      svg.setAttribute("height", h);
       svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
       svg.innerHTML = [
         `<rect width="${w}" height="${h}" fill="#fffaf0"></rect>`,
@@ -1920,6 +1956,22 @@ track resonance {
       URL.revokeObjectURL(url);
       status.textContent = `Exported ${tracks.length} track(s) as arrangement.mid`;
     }
+
+    svg.parentElement.addEventListener("wheel", (e) => {
+      if (!currentArrangement) return;
+      e.preventDefault();
+      const rollFrame = svg.parentElement;
+      const rect = rollFrame.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const oldZoom = zoomX;
+      const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+      zoomX = Math.max(1, Math.min(16, zoomX * factor));
+      if (zoomX === oldZoom) return;
+      const contentX = rollFrame.scrollLeft + mouseX;
+      const scaleFactor = zoomX / oldZoom;
+      renderArrangement(currentArrangement);
+      rollFrame.scrollLeft = contentX * scaleFactor - mouseX;
+    }, { passive: false });
 
     runButton.addEventListener("click", executePattern);
     playButton.addEventListener("click", startPlayback);
