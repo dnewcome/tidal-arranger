@@ -473,7 +473,7 @@ export function scaleEventsIntoWindow(events, startOffset, durationScale) {
 }
 
 export function parseSource(source, options = {}) {
-  const { allowEmpty = false } = options;
+  const { allowEmpty = false, parentConds = [] } = options;
   const sanitized = stripLineComments(source);
   const repeated = splitRepeat(sanitized.trim());
 
@@ -481,7 +481,7 @@ export function parseSource(source, options = {}) {
     const repeatedEvents = [];
     const sliceDuration = 1 / repeated.count;
     for (let i = 0; i < repeated.count; i += 1) {
-      const baseEvents = parseSource(repeated.base, { allowEmpty: true });
+      const baseEvents = parseSource(repeated.base, { allowEmpty: true, parentConds });
       repeatedEvents.push(...scaleEventsIntoWindow(baseEvents, i * sliceDuration, sliceDuration));
     }
     if (!repeatedEvents.length && !allowEmpty)
@@ -489,9 +489,16 @@ export function parseSource(source, options = {}) {
     return repeatedEvents.sort((a, b) => a.start - b.start || b.pitch - a.pitch);
   }
 
-  const voices = normalizeVoiceList(sanitized).map(voiceFromExpression);
+  // Strip conditions from each voice source before processing.
+  // A condition on a whole voice (`s "bd cp"!2`) flows down to every event it produces.
+  const voices = normalizeVoiceList(sanitized).map((voiceSrc, i) => {
+    const { base, conds } = parseCondition(voiceSrc);
+    const voice = voiceFromExpression(base, i);
+    voice.parentConds = [...parentConds, ...conds];
+    return voice;
+  });
   const events = [];
-  voices.forEach((voice) => expandPattern(voice.pattern, 0, 1, events, voice));
+  voices.forEach((voice) => expandPattern(voice.pattern, 0, 1, events, voice, voice.parentConds));
 
   if (!events.length && !allowEmpty)
     throw new Error("No playable events were parsed. The pattern is empty or fully commented out.");
@@ -502,6 +509,24 @@ export function expandSequenceExpression(expression, env = {}) {
   const trimmed = expression.trim();
   if (!trimmed) return [];
   if (env[trimmed]) return env[trimmed];
+
+  // Let binding reference with a condition suffix, e.g. `a!2` or `myPat?50`
+  const { base: condBase, conds: condSuffix } = parseCondition(trimmed);
+  if (condSuffix.length > 0 && env[condBase]) {
+    const label = conditionLabel(condSuffix);
+    return env[condBase].map((step) => step + label);
+  }
+
+  // .N repetition suffix: expr.N → N copies of expr
+  // Works on any base: verse.3, (verse.3 chorus).4, (cat [a,b]).2
+  const dotRepeatMatch = trimmed.match(/^([\s\S]+)\.(\d+)$/);
+  if (dotRepeatMatch) {
+    const base = expandSequenceExpression(dotRepeatMatch[1].trim(), env);
+    const count = Number.parseInt(dotRepeatMatch[2], 10);
+    const result = [];
+    for (let i = 0; i < count; i += 1) result.push(...base);
+    return result;
+  }
 
   const parenBody = unwrapOuterParens(trimmed);
   if (parenBody !== null) return expandSequenceExpression(parenBody, env);
@@ -539,6 +564,16 @@ export function expandSequenceExpression(expression, env = {}) {
       for (let i = 0; i < slotCount; i += 1) result.push(steps[i % steps.length]);
     }
     return result;
+  }
+
+  // Space-separated sequence: verse chorus, verse.3 chorus
+  // Guard: all parts must be bare identifiers (optionally with .N) or paren groups —
+  // prevents complex pattern expressions like `stack [ s "bd" ]` from being split.
+  const seqParts = splitTopLevel(trimmed, "space");
+  if (seqParts.length > 1 && seqParts.every(
+    (p) => /^[a-zA-Z_][a-zA-Z0-9_-]*(?:\.\d+)?$/.test(p) || (p.startsWith("(") && p.endsWith(")"))
+  )) {
+    return seqParts.flatMap((part) => expandSequenceExpression(part, env));
   }
 
   return [trimmed];
@@ -622,10 +657,14 @@ export function parseArrangement(source) {
 
   if (!trackBlocks.length) {
     const steps = sequenceStepsFromSource(topLevel.source, topLevel.env);
-    const segments = steps.map((step, index) => ({
-      start: index, duration: 1, source: step, name: `seq-${index + 1}`,
-      events: scaleSequenceEvents(parseSource(step, { allowEmpty: true }), { start: index, duration: 1 }, "track-1")
-    }));
+    const segments = steps.map((step, index) => {
+      const { base: stepSrc, conds: stepConds } = parseCondition(step);
+      const stepDef = { start: index, duration: 1 };
+      return {
+        ...stepDef, source: step, name: `seq-${index + 1}`,
+        events: scaleSequenceEvents(parseSource(stepSrc, { allowEmpty: true, parentConds: stepConds }), stepDef, "track-1")
+      };
+    });
     return {
       totalLength: Math.max(1, segments.length),
       tracks: [{ name: "track-1", segments, events: segments.flatMap((s) => s.events) }]
@@ -635,10 +674,11 @@ export function parseArrangement(source) {
   const tracks = trackBlocks.map((trackBlock, trackIndex) => {
     const trackScope = extractLetBindings(trackBlock.body, topLevel.env);
     const segments = sequenceStepsFromSource(trackScope.source, trackScope.env).map((step, stepIndex) => {
+      const { base: stepSrc, conds: stepConds } = parseCondition(step);
       const stepDef = { start: stepIndex, duration: 1 };
       return {
         ...stepDef, source: step, name: `seq-${stepIndex + 1}`,
-        events: step ? scaleSequenceEvents(parseSource(step, { allowEmpty: true }), stepDef, trackBlock.name) : []
+        events: stepSrc ? scaleSequenceEvents(parseSource(stepSrc, { allowEmpty: true, parentConds: stepConds }), stepDef, trackBlock.name) : []
       };
     });
     return {

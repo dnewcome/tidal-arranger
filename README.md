@@ -737,6 +737,37 @@ track resonance {
 }
 ```
 
+### Trig Conditions Across All Levels
+
+This example exercises conditions at every level of the hierarchy — individual tokens, bracket groups, let binding references with conditions, and whole `seqP` steps.
+
+```tidal
+let fill = cat ["bd sd bd sd", "bd bd sd sd"]
+let drop = s "oh*4"
+
+seqP [
+  stack [
+    s "bd cp bd cp",
+    s "hh!2*8",
+    drop?75
+  ],
+  stack [
+    s "bd cp bd cp",
+    s "[hh oh]!>2*4",
+    drop?75
+  ]!2:,
+  fill!3
+]
+```
+
+What each line tests:
+
+- `hh!2` — token condition: hi-hat fires only on even passes
+- `[hh oh]!>2` — group condition: both hats are silent for passes 1 and 2
+- `drop?75` — condition on a let binding reference: `oh*4` fires with 75% probability
+- `]!2:` — step condition: the entire second `seqP` slot is silent on pass 1, active from pass 2 onward
+- `fill!3` — condition on a let binding reference: the fill sequence only replaces the third step on every 3rd pass
+
 ### Comments
 
 ```tidal
