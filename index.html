@@ -819,7 +819,7 @@ track resonance {
             const segmentWidth = Math.max(10, (segment.duration / totalLength) * innerWidth);
             parts.push(`<rect x="${segmentX}" y="${laneY}" width="${segmentWidth}" height="${laneHeight}" rx="${Math.max(6, Math.min(14, laneHeight * 0.14))}" fill="rgba(22,66,60,0.04)" stroke="rgba(22,66,60,0.2)" stroke-dasharray="5 5"></rect>`);
             if (trackHeight > 50) {
-              parts.push(`<text x="${segmentX + 8}" y="${laneY + 16}" fill="#16423c" font-family="IBM Plex Mono, monospace" font-size="${metaFontSize}">seq ${segmentIndex + 1}</text>`);
+              parts.push(`<text x="${segmentX + 8}" y="${laneY + 16}" fill="#16423c" font-family="IBM Plex Mono, monospace" font-size="${metaFontSize}">${segment.name}</text>`);
             }
           });
 

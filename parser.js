@@ -513,8 +513,8 @@ export function expandSequenceExpression(expression, env = {}) {
   // Let binding reference with a condition suffix, e.g. `a!2` or `myPat?50`
   const { base: condBase, conds: condSuffix } = parseCondition(trimmed);
   if (condSuffix.length > 0 && env[condBase]) {
-    const label = conditionLabel(condSuffix);
-    return env[condBase].map((step) => step + label);
+    const suffix = conditionLabel(condSuffix);
+    return env[condBase].map((step) => ({ ...step, source: step.source + suffix }));
   }
 
   // .N repetition suffix: expr.N → N copies of expr
@@ -560,7 +560,7 @@ export function expandSequenceExpression(expression, env = {}) {
       const slotCount = slotEnd - slotStart;
       const colonIdx = tokens[t].indexOf(":");
       const name = colonIdx >= 0 ? tokens[t].slice(0, colonIdx) : tokens[t];
-      const steps = env[name] || [name];
+      const steps = env[name] || [{ source: name, label: null }];
       for (let i = 0; i < slotCount; i += 1) result.push(steps[i % steps.length]);
     }
     return result;
@@ -576,7 +576,7 @@ export function expandSequenceExpression(expression, env = {}) {
     return seqParts.flatMap((part) => expandSequenceExpression(part, env));
   }
 
-  return [trimmed];
+  return [{ source: trimmed, label: null }];
 }
 
 export function extractLetBindings(source, inheritedEnv = {}) {
@@ -585,7 +585,10 @@ export function extractLetBindings(source, inheritedEnv = {}) {
   splitTopLevelStatements(source).forEach((statement) => {
     const match = statement.match(/^let\s+([a-zA-Z][a-zA-Z0-9_-]*)\s*=\s*([\s\S]+)$/);
     if (!match) { remaining.push(statement); return; }
-    env[match[1]] = expandSequenceExpression(match[2], env);
+    const bindingName = match[1];
+    const expanded = expandSequenceExpression(match[2], env);
+    // Content labels: preserve existing labels; stamp binding name only on unlabeled items.
+    env[bindingName] = expanded.map((step) => step.label === null ? { ...step, label: bindingName } : step);
   });
   return { env, source: remaining.join("\n") };
 }
@@ -658,10 +661,10 @@ export function parseArrangement(source) {
   if (!trackBlocks.length) {
     const steps = sequenceStepsFromSource(topLevel.source, topLevel.env);
     const segments = steps.map((step, index) => {
-      const { base: stepSrc, conds: stepConds } = parseCondition(step);
+      const { base: stepSrc, conds: stepConds } = parseCondition(step.source);
       const stepDef = { start: index, duration: 1 };
       return {
-        ...stepDef, source: step, name: `seq-${index + 1}`,
+        ...stepDef, source: step.source, label: step.label, name: step.label || `seq-${index + 1}`,
         events: scaleSequenceEvents(parseSource(stepSrc, { allowEmpty: true, parentConds: stepConds }), stepDef, "track-1")
       };
     });
@@ -674,10 +677,10 @@ export function parseArrangement(source) {
   const tracks = trackBlocks.map((trackBlock, trackIndex) => {
     const trackScope = extractLetBindings(trackBlock.body, topLevel.env);
     const segments = sequenceStepsFromSource(trackScope.source, trackScope.env).map((step, stepIndex) => {
-      const { base: stepSrc, conds: stepConds } = parseCondition(step);
+      const { base: stepSrc, conds: stepConds } = parseCondition(step.source);
       const stepDef = { start: stepIndex, duration: 1 };
       return {
-        ...stepDef, source: step, name: `seq-${stepIndex + 1}`,
+        ...stepDef, source: step.source, label: step.label, name: step.label || `seq-${stepIndex + 1}`,
         events: stepSrc ? scaleSequenceEvents(parseSource(stepSrc, { allowEmpty: true, parentConds: stepConds }), stepDef, trackBlock.name) : []
       };
     });
