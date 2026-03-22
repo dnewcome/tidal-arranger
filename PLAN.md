@@ -101,6 +101,60 @@ Before switching parsers, evaluate:
 
 Keep the current parser for now — it is good enough for the song-builder use case and the features planned in the near term. When a specific feature cannot be cleanly added without rewriting a large chunk of the parser, that is the signal to revisit. At that point, prototype with tidal-mondo or zwirn first before committing to a full migration.
 
+## Re-entrant Patterns and Multi-Playhead Evaluation
+
+Most pattern languages — including Tidal — assume a single linear playhead that sweeps forward through time and samples each pattern expression at each point. This is clean and composable, but it forecloses a class of musically interesting behaviors that require multiple, conditionally-active, or recursively-nested playheads.
+
+### What re-entrancy means here
+
+A pattern expression is *re-entrant* if evaluating it can cause it to be evaluated again with a different (or displaced) time position before the first evaluation has completed. This is the pattern equivalent of a recursive function. Simple examples:
+
+- A pattern that spawns a copy of itself at some offset (echo, canon, imitation)
+- A pattern whose output feeds back as input to modulate its own parameters on the next cycle
+- A pattern that, upon reaching a certain state, jumps back to an earlier point (loop with conditional exit)
+
+These cannot be expressed in a purely applicative model like Tidal's (where `Pattern a = Time -> [Event a]`) without either threading explicit state through the time function or lifting the feedback to a higher level.
+
+### Multi-playhead evaluation
+
+Instead of one playhead per track, imagine a track having a *set* of active playheads, each with its own position and (optionally) its own state. New playheads can be spawned, paused, or killed by pattern expressions. This maps naturally to musical ideas:
+
+- **Polyrhythmic independence**: two playheads on the same pattern running at different rates (one at ×1, one at ×3/4) without needing to pre-compute a common LCM grid
+- **Stochastic branching**: a playhead forks at a decision point; each branch plays out independently and then rejoins (or one wins based on a condition)
+- **Canon/round**: a single pattern expression evaluated by N playheads staggered by a fixed offset — no need to write out each voice explicitly
+
+The evaluation model shifts from *"what events are active at time T?"* to *"what is the current set of active playheads, and what does each one emit right now?"* This is closer to how a concurrent process model (CSP, actors) works than how a pure function model works.
+
+### Conditional playheads
+
+A conditional playhead only advances (or only triggers events) when some predicate holds. The predicate can be:
+
+- **External**: a gate signal, a CC value crossing a threshold, a MIDI clock pulse
+- **Internal**: the playhead's own position modulo N, the count of times a loop has repeated, the output of another pattern
+- **Structural**: the playhead is inside a branch of a pattern that only activates on odd cycles, or only when another track is silent
+
+This starts to look like a dataflow graph where patterns are nodes and playheads are tokens moving through the graph — which is exactly the metaphor behind modular patchable sequencers.
+
+### Connection to chunkseq
+
+The chunkseq project (`~/sandbox/dnewcome/chunkseq`) is a natural home for these ideas. It is already built on a node-graph paradigm: each "chunk" is a sequence node with explicit trigger inputs, loop-point inputs, a transpose input, and a loop-end output port. The goal is eventually to connect chunk outputs to other chunks' inputs via visual patch cables. The patch metaphor makes multi-playhead evaluation concrete: each cable carries a signal stream, each chunk is a pattern transformer, and routing a cable back would create the feedback path needed for re-entrancy.
+
+ChunkSeq currently uses Tone.js for scheduling and a canvas piano roll for note entry. All chunks share one synthesizer (triangle oscillator). There is no persistent storage or MIDI export yet, and chunk-to-chunk connections are planned but not yet wired up.
+
+Specific ideas that could translate from tidal-arranger's pattern language to chunkseq:
+
+- **Pattern expressions as chunk behavior descriptors**: instead of drawing notes in the piano roll, a chunk's output could be described by a pattern expression. The expression language from this project could specify what values the chunk emits and when, making it programmable rather than only graphical.
+- **Functional combinators as patch topologies**: `stack`, `cat`, `ur` are essentially wiring diagrams. `stack` is a merge node; `cat` is a sequential switch; `ur` is a demultiplexer with a schedule. Making these visual in a patch UI would make the language more discoverable to non-coders.
+- **Playhead as a first-class routable signal**: chunkseq already has an implicit global clock via Tone.js Transport. Making the playhead an explicit signal that can be split, delayed, gated, or reversed before reaching a chunk node would be the modular equivalent of Tidal's time-transforming functions (`slow`, `fast`, `rev`, `iter`).
+- **Conditional routing**: a chunk node that only passes its playhead signal downstream when a condition holds — enabling the conditional playhead model described above without requiring the pattern language itself to have conditional syntax. This maps directly to chunkseq's planned "probability gates and conditional logic nodes."
+
+### Open questions
+
+- What is the minimal state a playhead needs to carry? (position, rate, loop count, identity, parent reference?)
+- Should re-entrancy be bounded (max recursion depth, max active playheads) or unlimited?
+- How do you render a multi-playhead arrangement in a piano-roll style view? (Each playhead's events could be a different shade or layer.)
+- Is there a clean functional encoding of multi-playhead semantics that remains referentially transparent, or does it require explicit concurrency primitives?
+
 ## Notes
 
 ### Currently implemented sequence helpers
