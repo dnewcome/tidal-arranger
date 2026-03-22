@@ -1,0 +1,133 @@
+-- ============================================================
+-- Song Example — 128 bars, intro + ABABCAB + outro
+-- 4 tracks: drums, bass, chords, lead
+-- Each seqP step = 1 bar (4 beats)
+-- ============================================================
+--
+-- Structure:
+--   intro    × 8  →   8 bars  (entry, sparse)
+--   verse    ×16  →  16 bars  (A)
+--   chorus   ×16  →  16 bars  (B)
+--   verse    ×16  →  16 bars  (A)
+--   chorus   ×16  →  16 bars  (B)
+--   bridge   ×16  →  16 bars  (C)
+--   verse    ×16  →  16 bars  (A)
+--   chorus   ×16  →  16 bars  (B)
+--   outro    × 8  →   8 bars  (fade)
+--                    -------
+--                    128 bars total
+
+-- ── Drum patterns ────────────────────────────────────────────
+
+let d_intro = stack [
+  s "bd ~ ~ ~",
+  s "hh ~ hh ~"
+]
+
+let d_verse = stack [
+  s "bd ~ cp ~ bd ~ cp ~",
+  s "hh*8",
+  s "oh ~ ~ ~ oh ~ ~ ~"
+]
+
+let d_chorus = stack [
+  s "bd cp bd cp",
+  s "[hh hh]*4",
+  s "oh ~ oh ~ oh ~ oh ~",
+  s "crash!8"                -- crash cymbal every 8th bar
+]
+
+let d_bridge = stack [
+  s "bd ~ ~ cp ~ ~ bd ~",   -- half-time snare feel
+  s "hh ~ hh hh ~ hh hh ~",
+  s "oh!4"                   -- open hat every 4th bar
+]
+
+let d_outro = stack [
+  s "bd ~ ~ ~",
+  s "hh ~ hh ~",
+  s "crash!1"                -- crash on the very first outro bar only
+]
+
+-- ── Bass patterns ─────────────────────────────────────────────
+
+let b_intro = n "c2 ~ ~ ~" # s "bass"
+
+let b_verse = n "c2 ~ g2 ~ f2 ~ g2 ~" # s "bass"
+
+let b_chorus = n "c2 e2 g2 e2 f2 a2 g2 ~" # s "bass"
+
+let b_bridge = n "a1 ~ e2 ~ f1 ~ c2 g1" # s "bass"
+
+let b_outro = n "c2 ~ ~ ~" # s "bass"
+
+-- ── Chord patterns ────────────────────────────────────────────
+-- Voicings: C major family (C-Am-F-G), bridge shifts to Am-F-C-G
+
+let ch_intro = stack [
+  n "c3 ~ ~ ~" # s "pad",
+  n "e3 ~ ~ ~" # s "pad",
+  n "g3 ~ ~ ~" # s "pad"
+]
+
+let ch_verse = stack [
+  n "c3 ~ a2 ~ f2 ~ g2 ~" # s "pad",
+  n "e3 ~ c3 ~ a2 ~ b2 ~" # s "pad",
+  n "g3 ~ e3 ~ c3 ~ d3 ~" # s "pad"
+]
+
+let ch_chorus = stack [
+  n "c3 c3 f2 ~ g2 ~ c3 ~" # s "keys",
+  n "e3 e3 a2 ~ b2 ~ e3 ~" # s "keys",
+  n "g3 g3 c3 ~ d3 ~ g3 ~" # s "keys"
+]
+
+let ch_bridge = stack [
+  n "a2 ~ f2 ~ c3 ~ g2 ~" # s "pad",
+  n "c3 ~ a2 ~ e3 ~ b2 ~" # s "pad",
+  n "e3 ~ c3 ~ g3 ~ d3 ~" # s "pad"
+]
+
+let ch_outro = stack [
+  n "c3 ~ ~ ~" # s "pad",
+  n "e3 ~ ~ ~" # s "pad",
+  n "g3 ~ ~ ~" # s "pad"
+]
+
+-- ── Lead patterns ─────────────────────────────────────────────
+
+let l_intro = n "~ ~ ~ ~" # s "lead"        -- silent intro
+
+let l_verse = n "c4 ~ e4 ~ g4 ~ e4 ~" # s "lead"
+
+let l_chorus = n "c5 b4 a4 g4 e4 ~ c4 e4" # s "lead"
+
+let l_bridge = n "a4 ~ g4 f4 e4 ~ d4 ~" # s "lead"
+
+let l_outro = n "c4 ~ ~ ~" # s "lead"
+
+-- ── Arrangement ───────────────────────────────────────────────
+
+track drums {
+  seqP [
+    d_intro.8 d_verse.16 d_chorus.16 d_verse.16 d_chorus.16 d_bridge.16 d_verse.16 d_chorus.16 d_outro.8
+  ]
+}
+
+track bass {
+  seqP [
+    b_intro.8 b_verse.16 b_chorus.16 b_verse.16 b_chorus.16 b_bridge.16 b_verse.16 b_chorus.16 b_outro.8
+  ]
+}
+
+track chords {
+  seqP [
+    ch_intro.8 ch_verse.16 ch_chorus.16 ch_verse.16 ch_chorus.16 ch_bridge.16 ch_verse.16 ch_chorus.16 ch_outro.8
+  ]
+}
+
+track lead {
+  seqP [
+    l_intro.8 l_verse.16 l_chorus.16 l_verse.16 l_chorus.16 l_bridge.16 l_verse.16 l_chorus.16 l_outro.8
+  ]
+}
