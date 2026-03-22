@@ -101,6 +101,163 @@ Before switching parsers, evaluate:
 
 Keep the current parser for now — it is good enough for the song-builder use case and the features planned in the near term. When a specific feature cannot be cleanly added without rewriting a large chunk of the parser, that is the signal to revisit. At that point, prototype with tidal-mondo or zwirn first before committing to a full migration.
 
+## Conditional Triggers, Micro-timing, and Playhead Rules
+
+### The core idea: patterns as entire songs
+
+The Elektron sequencer boxes have a concept called *trig conditions* — a note in a pattern can be marked so it only fires on every 2nd pass, every 8th pass, with 50% probability, only the first time, never the first time, etc. The implication is profound: a single 16-step pattern can carry far more musical information than it appears to. With enough trig conditions, fills, variations, and probability gates all co-exist in the same pattern object, and the song emerges from the interaction of conditions over time rather than from explicit arrangement.
+
+The goal here is to push this further — combining conditional triggers, probabilistic firing, micro-timing offsets, and multi-playhead evaluation to the point where a single pattern expression can represent an entire song.
+
+### Trig conditions (pass-count and modular logic)
+
+Every note or event in a pattern can carry a *condition* that gates whether it fires on a given pass through. Conditions reference the playhead's pass count — the number of times the playhead has completed the full pattern — and evaluate to true or false.
+
+Proposed condition types:
+
+| Syntax | Meaning |
+|---|---|
+| `bd` | always fires (default, no condition) |
+| `bd!2` | fires every 2nd pass (passes 2, 4, 6, ...) |
+| `bd!8` | fires every 8th pass (long-period events: crashes, fills) |
+| `bd!1` | fires only on the 1st pass (intros, pickups) |
+| `bd!>1` | fires on all passes after the 1st (skip intro) |
+| `bd!1:8` | fires on passes 1 through 8 (verse section) |
+| `bd!9:` | fires on pass 9 and beyond (post-chorus) |
+| `bd%2` | fires on odd passes (1, 3, 5, ...) |
+| `bd?50` | fires with 50% probability each pass |
+| `bd?75` | fires with 75% probability |
+
+The pass counter is per-playhead, not global — so two playheads on the same pattern at different rates accumulate pass counts independently. A "chorus playhead" that runs only when the chorus section is active would see its own pass count starting from 1 when it first enters.
+
+These are annotations on individual events, not on the whole pattern. A pattern with a mix of always-on and conditional events can contain a full arrangement in one expression:
+
+```
+stack [
+  s "bd cp bd cp",           -- always
+  s "hh!2*8",                -- hi-hats only on even passes
+  s "oh!4",                  -- open hat every 4th pass
+  s "crash!8",               -- crash every 8th (downbeat of new section)
+  n "c4 e4 g4 ~" # s "lead", -- always
+  n "b3!>4" # s "lead"       -- counter-melody enters after 4 passes
+]
+```
+
+### Probabilistic firing
+
+Probabilistic conditions (`?P`) sample a uniform random value each time the note is reached and fire if the value falls below P. Unlike pass-count conditions, probability is evaluated fresh on every pass, every playhead, every evaluation — no memory.
+
+Probability and pass-count conditions can be combined: `bd!>2?50` means "after the 2nd pass, fire with 50% probability." The condition evaluates left-to-right: pass-count gates first, then probability.
+
+For reproducible randomness (important for preview/export consistency), the RNG can be seeded from `(playhead_id, pass_count, event_position)` — making the "random" variation deterministic and repeatable given the same starting conditions.
+
+### Micro-timing: trip notes ("Dilla mode")
+
+A *trip* annotation on a note nudges its onset forward or backward in time by some amount, without changing its duration or its position in the pattern grid. This is the quantitative version of what J Dilla did by hand — placing beats slightly ahead or behind the grid to create a feeling of looseness, heaviness, or groove.
+
+Proposed syntax:
+
+| Syntax | Meaning |
+|---|---|
+| `cp` | on the grid |
+| `cp+8` | 8ms late (pushed back, heavy feel) |
+| `cp-6` | 6ms early (pushed forward, urgent feel) |
+| `cp~16` | random nudge ±16ms, resampled each pass |
+| `cp~8!2` | random nudge ±8ms, but only on even passes |
+| `cp^sine` | nudge follows a sine curve over the pattern cycle |
+
+The `~` form makes the groove feel human and inconsistent. The `^shape` form creates a systematic micro-timing drift — the beat slowly breathes in and out of time, which at slow speeds creates a floating, disorienting effect.
+
+Trip amounts are in milliseconds, independent of BPM, because the perceptual effect of micro-timing is absolute rather than proportional. (At 80 BPM, 16ms is a very small fraction of a beat; at 200 BPM it is significant — this asymmetry is part of how groove works.)
+
+### Playhead rules and named playheads
+
+A playhead is not just a position counter. It can carry:
+
+- **An identity** (name or label, e.g. `"verse"`, `"chorus"`, `"fill"`)
+- **A pass counter** (how many loops completed)
+- **A rate** (already implemented in explore.html)
+- **A filter predicate** — determines which events the playhead "sees" and fires
+- **A transform** — modifies events before firing (transpose, velocity scale, reverse, etc.)
+
+#### Filter predicates
+
+A playhead's filter predicate is evaluated against each event it encounters. The playhead only fires events for which the predicate returns true. Examples:
+
+- `playhead.filter = (ev) => ev.tags.includes("chorus")` — only fires events tagged `chorus`
+- `playhead.filter = (ev) => ev.isDrum` — drums-only playhead
+- `playhead.filter = (ev) => ev.pitch > 60` — only fires notes above middle C
+- `playhead.filter = (ev) => Math.random() < 0.3` — fires any event with 30% probability
+
+Pattern syntax for tagging events: `bd#verse` or `s "bd cp bd cp" # tag verse`. Tags are metadata that do not affect pitch or timing but are visible to playhead predicates.
+
+#### Transform functions
+
+A playhead's transform is applied to every event it fires, after filtering:
+
+- **Transpose**: shift all pitches by N semitones
+- **Velocity scale**: multiply velocity by a factor (e.g. 0.5 for ghost notes)
+- **Reverse**: play events in reverse time order within each cycle
+- **Swing**: apply a global swing offset to all events this playhead sees
+- **Phase offset**: the playhead starts at a non-zero phase, hearing the pattern from a different entry point
+
+Multiple playheads on the same pattern with different filters and transforms can produce layered results that would require multiple separate tracks to write explicitly. A "fill playhead" with filter `ev.tags.includes("fill")` and rate `!8` would produce a fill every 8th pass without any explicit fill section.
+
+### Fills and layers via playhead composition
+
+Concrete example of a full-song pattern using these ideas:
+
+```
+-- One pattern, multiple playheads:
+--   main playhead: rate 1×, no filter, always running
+--   fill playhead: rate 1×, filter=tag("fill"), only active every 8 passes
+--   chorus playhead: rate 1×, filter=tag("chorus") OR tag("main"), active on passes 5-8, 13-16, ...
+--   ghost playhead: rate 1×, transform=velocity(0.3), filter=tag("ghost"), always running
+
+stack [
+  s "bd cp bd cp",
+  s "bd#fill cp#fill bd cp",          -- these events visible to fill playhead only
+  s "hh*8",
+  s "oh#chorus",                       -- open hat only when chorus playhead is active
+  n "c4 e4 g4 ~" # s "lead",
+  n "f4 a4 c5 ~" # s "lead" # tag chorus,
+  n "g3?50" # s "bass",               -- probabilistic bass ghost notes
+  n "g3#ghost*4" # s "bass"           -- ghost bass, handled by ghost playhead at low velocity
+]
+```
+
+The same physical pattern object produces verse texture, chorus texture, fills, and ghost notes depending on which playheads are currently active and what their pass counts are. No separate sections or arrangement needed — the song emerges from the playhead schedule.
+
+### Sub-cycles and condition clocks
+
+Pass-count conditions (`!N`) count full loops of the pattern. But you might want conditions that count something else:
+
+- **Bar count**: fires every N bars, where a bar is smaller than the full pattern
+- **External clock**: fires on beat 1 of every N measures coming from a MIDI clock
+- **Playhead-relative count**: fires every Nth time *this specific playhead* encounters this event (not total loops)
+- **Cross-playhead**: fires only when playhead A is on an even pass AND playhead B has completed at least 4 loops
+
+The last form is the most powerful — it allows coordination between playheads without explicit arrangement. A crash cymbal that fires when both the main playhead is on pass 8 AND the "section" playhead has just wrapped is a section boundary marker that emerges from the interaction of two independent counters.
+
+### Connection to the homoiconic IR
+
+All of these annotations can be represented as decorators on S-expression leaf nodes:
+
+```
+(note bd)                              -- plain trigger
+(note bd (cond (every 2)))             -- fires every 2nd pass
+(note bd (cond (prob 0.5)))            -- 50% probability
+(note bd (trip (rand 16)))             -- ±16ms random micro-timing
+(note bd (tag fill))                   -- tagged for fill playhead
+(note bd (cond (every 8)) (tag crash)) -- every 8th, tagged crash
+
+-- Combined:
+(note cp (cond (after 2) (prob 0.75)) (trip (rand 8)))
+-- "After pass 2, fire with 75% probability, with ±8ms random timing"
+```
+
+This is clean because the base note is unmodified — the decorators are pure metadata visible to the evaluation engine. A simple evaluator that ignores all decorators produces a dense, always-on version. A full evaluator applies each decorator in order. The S-expression representation makes it easy to strip, add, or transform decorators with rewrite rules.
+
 ## Homoiconic Intermediate Representation
 
 The idea: define an S-expression intermediate language (IL) that sits between the terse human-writable tidal surface syntax and the runtime event model. Pattern expressions would be writable tersely as tidal notation, transpiled to S-expressions for storage, manipulation, and rewriting, and optionally pretty-printed back to something approximating the original tidal notation.

@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pattern Explorer</title>
+  <style>
+    :root {
+      --bg: #0d1016;
+      --panel: #131926;
+      --panel-strong: #0f141e;
+      --ink: #edf2ff;
+      --muted: #93a0ba;
+      --accent: #7ae582;
+      --border: #232b3c;
+      --radius: 10px;
+      --mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+      --sans: "Space Grotesk", "Avenir Next", "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      height: 100vh;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: var(--sans);
+      display: grid;
+      grid-template-rows: 48px 1fr;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 0 18px;
+      background: #101521;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.9rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    header span {
+      color: var(--muted);
+      font-weight: 400;
+      font-size: 0.8rem;
+    }
+
+    .workspace {
+      display: grid;
+      grid-template-columns: 400px 1fr;
+      min-height: 0;
+    }
+
+    /* ── Left panel ─────────────────────────────────────── */
+    .editor-panel {
+      display: grid;
+      grid-template-rows: 1fr auto;
+      border-right: 1px solid var(--border);
+      min-height: 0;
+    }
+
+    textarea {
+      width: 100%;
+      height: 100%;
+      resize: none;
+      background: var(--panel-strong);
+      color: var(--ink);
+      font-family: var(--mono);
+      font-size: 0.82rem;
+      line-height: 1.6;
+      border: none;
+      outline: none;
+      padding: 16px;
+      tab-size: 2;
+    }
+
+    .controls {
+      padding: 12px 14px;
+      background: var(--panel);
+      border-top: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .control-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      appearance: none;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #1a2035;
+      color: var(--ink);
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      padding: 6px 14px;
+      cursor: pointer;
+    }
+
+    button:hover { background: #222c45; }
+
+    button.accent {
+      background: rgba(122, 229, 130, 0.14);
+      border-color: rgba(122, 229, 130, 0.35);
+      color: var(--accent);
+    }
+
+    button.accent:hover { background: rgba(122, 229, 130, 0.22); }
+
+    button.danger {
+      background: rgba(216, 95, 69, 0.12);
+      border-color: rgba(216, 95, 69, 0.3);
+      color: #e07060;
+    }
+
+    label.field {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
+
+    label.field input[type="number"] {
+      width: 56px;
+      background: var(--panel-strong);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--ink);
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      padding: 4px 6px;
+      text-align: right;
+    }
+
+    .playhead-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .playhead-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--mono);
+      font-size: 0.76rem;
+    }
+
+    .ph-swatch {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex: 0 0 auto;
+    }
+
+    .ph-label { color: var(--muted); width: 22px; }
+
+    .ph-rate-wrap { display: flex; align-items: center; gap: 4px; color: var(--muted); }
+
+    .ph-rate-wrap input[type="range"] {
+      width: 80px;
+      accent-color: var(--accent);
+    }
+
+    .ph-rate-val { width: 30px; text-align: right; color: var(--ink); }
+
+    .status {
+      font-family: var(--mono);
+      font-size: 0.74rem;
+      color: var(--muted);
+      min-height: 16px;
+    }
+
+    /* ── Right panel ────────────────────────────────────── */
+    .viz-panel {
+      background: var(--panel-strong);
+      min-height: 0;
+      overflow: hidden;
+      position: relative;
+    }
+
+    svg {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    Pattern Explorer
+    <span>single-pattern · multi-playhead</span>
+  </header>
+
+  <div class="workspace">
+    <div class="editor-panel">
+      <textarea id="pattern-input" spellcheck="false">stack [
+  s "bd cp bd cp",
+  s "hh*8",
+  n "c4 [e4 g4] a4 g4" # s "lead"
+]</textarea>
+
+      <div class="controls">
+        <div class="control-row">
+          <button class="accent" id="run-btn">Run  ⏎</button>
+          <button id="play-btn">Play</button>
+          <button id="stop-btn">Stop</button>
+          <label class="field">BPM <input id="bpm-input" type="number" min="30" max="240" value="120"></label>
+        </div>
+
+        <div class="playhead-list" id="playhead-list"></div>
+
+        <div class="control-row">
+          <button id="add-ph-btn">+ Playhead</button>
+        </div>
+
+        <div class="status" id="status"></div>
+      </div>
+    </div>
+
+    <div class="viz-panel" id="viz-panel">
+      <svg id="piano-roll" viewBox="0 0 800 500"></svg>
+    </div>
+  </div>
+
+  <script type="module">
+    import { parseSource, instrumentColorMap, pitchRange, noteName } from "./parser.js";
+
+    // ── State ────────────────────────────────────────────
+    const PLAYHEAD_COLORS = ["#7ae582", "#ff7c5c", "#7cb9ff", "#ffd166", "#c77dff", "#f72585"];
+
+    let currentEvents = [];
+    let animFrameId = null;
+    let lastTimestamp = null;
+    let isPlaying = false;
+    let nextPlayheadId = 1;
+
+    // Each playhead: { id, phase, rate, color, active (playing) }
+    let playheads = [];
+
+    // ── DOM refs ─────────────────────────────────────────
+    const svg        = document.getElementById("piano-roll");
+    const vizPanel   = document.getElementById("viz-panel");
+    const textarea   = document.getElementById("pattern-input");
+    const statusEl   = document.getElementById("status");
+    const bpmInput   = document.getElementById("bpm-input");
+    const runBtn     = document.getElementById("run-btn");
+    const playBtn    = document.getElementById("play-btn");
+    const stopBtn    = document.getElementById("stop-btn");
+    const addPhBtn   = document.getElementById("add-ph-btn");
+    const phListEl   = document.getElementById("playhead-list");
+
+    // ── Layout constants (updated on render) ─────────────
+    let layout = { margin: { top: 24, right: 16, bottom: 20, left: 80 }, width: 800, height: 500 };
+
+    // ── Helpers ───────────────────────────────────────────
+    function getBpm() {
+      const v = parseFloat(bpmInput.value);
+      return isFinite(v) ? Math.max(30, Math.min(240, v)) : 120;
+    }
+
+    function getLoopDurationMs() {
+      return (60000 / getBpm()) * 4; // 1 step = 4 beats
+    }
+
+    function setStatus(msg) { statusEl.textContent = msg; }
+
+    // ── Parse & render ────────────────────────────────────
+    function run() {
+      try {
+        currentEvents = parseSource(textarea.value);
+        renderStaticPianoRoll(currentEvents);
+        setStatus(`${currentEvents.length} events parsed.`);
+      } catch (err) {
+        currentEvents = [];
+        renderEmpty(err.message);
+        setStatus(err.message);
+      }
+    }
+
+    // ── Static piano-roll render (no playheads) ───────────
+    function renderStaticPianoRoll(events) {
+      const w = Math.max(200, vizPanel.clientWidth);
+      const h = Math.max(200, vizPanel.clientHeight);
+      const m = { top: 24, right: 16, bottom: 20, left: 80 };
+      layout = { margin: m, width: w, height: h };
+
+      const iw = w - m.left - m.right;
+      const ih = h - m.top - m.bottom;
+
+      svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+      svg.setAttribute("width", w);
+      svg.setAttribute("height", h);
+
+      const noteEvents = events.filter((e) => e.type !== "cc");
+      const range = noteEvents.length ? pitchRange(noteEvents) : { min: 60, max: 72 };
+      const pitchCount = range.max - range.min + 1;
+      const rowH = ih / pitchCount;
+      const colorMap = instrumentColorMap(events);
+
+      const parts = [];
+      parts.push(`<rect width="${w}" height="${h}" fill="#0c1018"></rect>`);
+      parts.push(`<defs><filter id="glow"><feDropShadow dx="0" dy="0" stdDeviation="4" flood-color="#fff" flood-opacity="0.5"/></filter></defs>`);
+
+      // Piano roll rows
+      for (let pitch = range.min; pitch <= range.max; pitch++) {
+        const row = range.max - pitch;
+        const y = m.top + row * rowH;
+        const isBlack = [1, 3, 6, 8, 10].includes(pitch % 12);
+        parts.push(`<rect x="${m.left}" y="${y}" width="${iw}" height="${rowH}" fill="${isBlack ? "rgba(17,17,17,0.06)" : "rgba(255,255,255,0.02)"}"/>`);
+        parts.push(`<line x1="${m.left}" y1="${y}" x2="${w - m.right}" y2="${y}" stroke="rgba(255,255,255,0.05)"/>`);
+      }
+
+      // Beat grid (4 beats per step)
+      for (let beat = 0; beat <= 4; beat++) {
+        const x = m.left + (iw * beat) / 4;
+        const isMajor = beat % 4 === 0;
+        parts.push(`<line x1="${x}" y1="${m.top}" x2="${x}" y2="${h - m.bottom}" stroke="${isMajor ? "rgba(255,255,255,0.15)" : "rgba(255,255,255,0.06)"}" stroke-width="${isMajor ? 1.2 : 0.8}"/>`);
+      }
+
+      // Pitch labels
+      if (rowH > 8) {
+        parts.push(`<text x="${m.left - 6}" y="${m.top + 10}" text-anchor="end" fill="#5a6a8a" font-family="IBM Plex Mono,monospace" font-size="9">${noteName(range.max)}</text>`);
+        parts.push(`<text x="${m.left - 6}" y="${m.top + ih - 2}" text-anchor="end" fill="#5a6a8a" font-family="IBM Plex Mono,monospace" font-size="9">${noteName(range.min)}</text>`);
+      }
+
+      // Note rectangles
+      noteEvents.forEach((event) => {
+        const x = m.left + event.start * iw;
+        const nw = Math.max(4, event.duration * iw - 2);
+        const y = m.top + (range.max - event.pitch) * rowH + 1;
+        const nh = Math.max(4, rowH - 2);
+        const fill = colorMap.get(event.instrument) || "#7ae582";
+        parts.push(
+          `<g data-eid="${event.start.toFixed(6)}-${event.pitch}">` +
+          `<rect class="note" x="${x}" y="${y}" width="${nw}" height="${nh}" rx="4" fill="${fill}" opacity="0.82"/>` +
+          `<rect x="${x}" y="${y}" width="${nw}" height="${nh}" rx="4" fill="none" stroke="rgba(0,0,0,0.2)" stroke-width="0.8"/>` +
+          (nw > 30 && nh > 10 ? `<text x="${x + 5}" y="${y + nh * 0.68}" fill="rgba(255,255,255,0.85)" font-family="IBM Plex Mono,monospace" font-size="9">${event.label}</text>` : "") +
+          `</g>`
+        );
+      });
+
+      // Playhead lines (one per playhead, positioned at phase 0 initially)
+      playheads.forEach((ph) => {
+        const x = m.left;
+        parts.push(
+          `<line id="ph-line-${ph.id}" ` +
+          `x1="${x}" y1="${m.top}" x2="${x}" y2="${h - m.bottom}" ` +
+          `stroke="${ph.color}" stroke-width="1.5" opacity="0.85" stroke-dasharray="4 3"/>`
+        );
+      });
+
+      svg.innerHTML = parts.join("");
+    }
+
+    function renderEmpty(msg = "") {
+      const w = Math.max(200, vizPanel.clientWidth);
+      const h = Math.max(200, vizPanel.clientHeight);
+      svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+      svg.setAttribute("width", w);
+      svg.setAttribute("height", h);
+      svg.innerHTML = [
+        `<rect width="${w}" height="${h}" fill="#0c1018"/>`,
+        `<text x="${w / 2}" y="${h / 2}" text-anchor="middle" fill="#3a4560" font-family="IBM Plex Mono,monospace" font-size="14">${msg || "Run a pattern to begin"}</text>`
+      ].join("");
+    }
+
+    // ── Playhead animation ────────────────────────────────
+    function updatePlayheadPositions(timestamp) {
+      if (!isPlaying) return;
+      if (lastTimestamp === null) lastTimestamp = timestamp;
+      const dt = timestamp - lastTimestamp;
+      lastTimestamp = timestamp;
+
+      const loopMs = getLoopDurationMs();
+      const { margin: m, width: w, height: h } = layout;
+      const iw = w - m.left - m.right;
+
+      playheads.forEach((ph) => {
+        ph.phase = (ph.phase + ph.rate * dt / loopMs) % 1;
+        const x = m.left + ph.phase * iw;
+        const line = svg.getElementById(`ph-line-${ph.id}`);
+        if (line) {
+          line.setAttribute("x1", x);
+          line.setAttribute("x2", x);
+        }
+      });
+
+      // Highlight notes covered by any playhead
+      const noteEls = svg.querySelectorAll(".note");
+      noteEls.forEach((el) => {
+        const g = el.parentElement;
+        const eidAttr = g?.getAttribute("data-eid");
+        if (!eidAttr) return;
+        const [startStr, pitchStr] = eidAttr.split("-");
+        const evStart = parseFloat(startStr);
+        // find the matching event to get duration
+        const event = currentEvents.find((e) => Math.abs(e.start - evStart) < 1e-4 && String(e.pitch) === pitchStr);
+        if (!event) return;
+        const covered = playheads.some((ph) => {
+          const phEnd = ph.phase;
+          const evEnd = event.start + event.duration;
+          // check if playhead phase falls within this event's window
+          return ph.phase >= event.start && ph.phase < evEnd;
+        });
+        el.setAttribute("opacity", covered ? "1" : "0.82");
+        el.setAttribute("filter", covered ? "url(#glow)" : "");
+      });
+
+      animFrameId = requestAnimationFrame(updatePlayheadPositions);
+    }
+
+    function startAnimation() {
+      if (animFrameId !== null) cancelAnimationFrame(animFrameId);
+      lastTimestamp = null;
+      animFrameId = requestAnimationFrame(updatePlayheadPositions);
+    }
+
+    function stopAnimation() {
+      if (animFrameId !== null) { cancelAnimationFrame(animFrameId); animFrameId = null; }
+      lastTimestamp = null;
+    }
+
+    // ── Playback controls ─────────────────────────────────
+    function play() {
+      if (!currentEvents.length) { setStatus("Run a pattern first."); return; }
+      isPlaying = true;
+      playBtn.textContent = "Playing";
+      startAnimation();
+      setStatus(`Playing at ${getBpm()} BPM · ${playheads.length} playhead${playheads.length === 1 ? "" : "s"}`);
+    }
+
+    function stop() {
+      isPlaying = false;
+      stopAnimation();
+      playBtn.textContent = "Play";
+      // Reset playhead positions to 0
+      playheads.forEach((ph) => { ph.phase = 0; });
+      renderStaticPianoRoll(currentEvents);
+      setStatus("Stopped.");
+    }
+
+    // ── Playhead management ───────────────────────────────
+    function addPlayhead(rate = 1.0) {
+      const id = nextPlayheadId++;
+      const color = PLAYHEAD_COLORS[(playheads.length) % PLAYHEAD_COLORS.length];
+      const ph = { id, phase: 0, rate, color };
+      playheads.push(ph);
+      renderPlayheadControls();
+      if (currentEvents.length) renderStaticPianoRoll(currentEvents);
+    }
+
+    function removePlayhead(id) {
+      playheads = playheads.filter((ph) => ph.id !== id);
+      renderPlayheadControls();
+      if (currentEvents.length) renderStaticPianoRoll(currentEvents);
+    }
+
+    function renderPlayheadControls() {
+      phListEl.innerHTML = "";
+      playheads.forEach((ph) => {
+        const row = document.createElement("div");
+        row.className = "playhead-row";
+        row.innerHTML = `
+          <span class="ph-swatch" style="background:${ph.color}"></span>
+          <span class="ph-label">Ph${ph.id}</span>
+          <span class="ph-rate-wrap">
+            rate
+            <input type="range" min="0.25" max="4" step="0.05" value="${ph.rate}" data-id="${ph.id}">
+            <span class="ph-rate-val" id="ph-rate-val-${ph.id}">${ph.rate.toFixed(2)}×</span>
+          </span>
+          <button class="danger" data-remove="${ph.id}" style="padding:3px 8px;font-size:0.7rem">✕</button>
+        `;
+        phListEl.appendChild(row);
+      });
+
+      phListEl.querySelectorAll("input[type=range]").forEach((slider) => {
+        slider.addEventListener("input", (e) => {
+          const id = parseInt(e.target.dataset.id);
+          const ph = playheads.find((p) => p.id === id);
+          if (ph) {
+            ph.rate = parseFloat(e.target.value);
+            const valEl = document.getElementById(`ph-rate-val-${id}`);
+            if (valEl) valEl.textContent = ph.rate.toFixed(2) + "×";
+          }
+        });
+      });
+
+      phListEl.querySelectorAll("button[data-remove]").forEach((btn) => {
+        btn.addEventListener("click", (e) => {
+          removePlayhead(parseInt(btn.dataset.remove));
+        });
+      });
+    }
+
+    // ── Keyboard shortcut ─────────────────────────────────
+    textarea.addEventListener("keydown", (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); run(); }
+    });
+
+    // ── Wire up buttons ───────────────────────────────────
+    runBtn.addEventListener("click", run);
+    playBtn.addEventListener("click", play);
+    stopBtn.addEventListener("click", stop);
+    addPhBtn.addEventListener("click", () => addPlayhead(1.0));
+
+    // ── Init ─────────────────────────────────────────────
+    addPlayhead(1.0);
+    addPlayhead(1.5);
+    run();
+  </script>
+</body>
+</html>
