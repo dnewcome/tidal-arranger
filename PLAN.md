@@ -101,6 +101,105 @@ Before switching parsers, evaluate:
 
 Keep the current parser for now — it is good enough for the song-builder use case and the features planned in the near term. When a specific feature cannot be cleanly added without rewriting a large chunk of the parser, that is the signal to revisit. At that point, prototype with tidal-mondo or zwirn first before committing to a full migration.
 
+## Homoiconic Intermediate Representation
+
+The idea: define an S-expression intermediate language (IL) that sits between the terse human-writable tidal surface syntax and the runtime event model. Pattern expressions would be writable tersely as tidal notation, transpiled to S-expressions for storage, manipulation, and rewriting, and optionally pretty-printed back to something approximating the original tidal notation.
+
+### Why homoiconicity matters here
+
+A homoiconic language is one where the program and its data share the same representation — the canonical example being Lisp, where code is S-expressions and S-expressions are lists you can manipulate as data. The payoff:
+
+- **Serialization is free.** An S-expression pattern is already a data structure. You can store it to JSON, transmit it over a wire, diff two patterns structurally, or render it as a tree without a separate serialization step.
+- **Rewriting is composition.** A macro or rewrite rule is just a function from S-expression to S-expression. You can chain rules, apply them selectively, memoize expansions, or run them in reverse. Pattern transformations like `slow`, `fast`, `rev`, `every` become rewrite rules rather than runtime operators — they transform the expression before evaluation, not during.
+- **The AST is the patch.** In chunkseq terms, an S-expression tree is a wiring diagram. Inner nodes are combinators (functions); leaves are values. Rendering the tree visually gives you a patch graph for free.
+
+### Proposed S-expression primitives
+
+A minimal core that can represent all current tidal-arranger patterns:
+
+```
+(seq e1 e2 ... eN)       -- time-sequential: divide span evenly, one child per slot
+(stack e1 e2 ... eN)     -- polyphonic: all children play simultaneously over full span
+(rep N e)                -- repeat e N times within the current span
+(note pitch instrument)  -- leaf: a single note event
+(cc n v)                 -- leaf: a CC value
+(rest)                   -- leaf: silence
+(with-inst name e)       -- bind instrument name to all note leaves in e
+(ur N schedule)          -- ur combinator: schedule is a (seq ...) of named patterns
+(slow N e)               -- stretch e to N times its natural duration
+(fast N e)               -- compress e to 1/N of its natural duration
+(every N f e)            -- apply rewrite rule f to e on every Nth cycle
+```
+
+This is a closed set at the core. Extensions (LFO shapes, CC automation, custom combinators) are added as new named forms without changing the evaluator's core loop.
+
+### Tidal surface → S-expression transpiler
+
+The current tidal-arranger parser already walks the surface syntax and produces events. A transpiler would produce an S-expression AST instead, which could then be evaluated to events as a second pass. Example mappings:
+
+| Tidal surface | S-expression |
+|---|---|
+| `s "bd cp hh"` | `(seq (note 36 bd) (note 39 cp) (note 42 hh))` |
+| `s "bd*4"` | `(rep 4 (note 36 bd))` |
+| `s "[bd hh] cp"` | `(seq (seq (note 36 bd) (note 42 hh)) (note 39 cp))` |
+| `n "c4 e4 g4" # s "lead"` | `(with-inst lead (seq (note 60) (note 64) (note 67)))` |
+| `stack [a, b]` | `(stack a b)` |
+| `cat [a, b, c]` | `(seq a b c)` |
+| `ur 12 "a b c"` | `(ur 12 (seq a b c))` |
+| `ccn 74 # ccv (sine 16 10 110)` | `(cc 74 (sine 16 10 110))` |
+
+The transpiler is straightforward because the current parser already does most of this work — it just emits events instead of an AST node. Separating those two concerns (parse → AST, AST → events) is the structural change needed.
+
+### Macro-style rewriting rules
+
+Once patterns are S-expressions, rewrite rules are functions `SExpr -> SExpr`. Examples:
+
+```
+-- Expansion rules (sugar → core)
+(ur N (seq a b c))  →  (seq (rep 4 a) (rep 4 b) (rep 4 c))   [when N/3 = 4]
+(rep 1 e)           →  e
+(seq e)             →  e
+(stack e)           →  e
+
+-- Normalization rules (for canonical form / comparison)
+(rep N (rep M e))   →  (rep (* N M) e)
+(seq (seq ...))     →  (seq ...)         [flatten nested seqs at same time level]
+
+-- Factoring rules (for display / compression)
+(seq e e e e)       →  (rep 4 e)         [when all children identical]
+(stack e e)         →  (rep-voices 2 e)  [hypothetical]
+```
+
+Rules can be run forward (expansion, for evaluation) or as recognizers in reverse (compression, for display). A pattern editor could apply normalization before display to collapse verbose expanded forms back to readable expressions.
+
+### S-expression → tidal round-trip
+
+Full round-tripping is not possible in general — the surface syntax is lossy (e.g., `bd*4` and `[bd bd bd bd]` are the same pattern; the transpiler picks one). But a pretty-printer with recognition heuristics can produce a reasonable approximation:
+
+1. **Leaf recognition**: `(note 36 bd)` → `bd`, `(note 60)` → `c4`
+2. **Rep compression**: `(seq x x x x)` where all children are equal → `x*4`
+3. **Bracket grouping**: nested `(seq ...)` inside a parent `(seq ...)` → `[...]`
+4. **Stack flattening**: `(stack a b)` → `stack [ a, b ]`
+5. **Instrument hoisting**: if all notes in a `(seq ...)` share the same instrument, emit `n "..." # s "instrument"`
+
+The result will not be identical to what the human typed but should be semantically equivalent and human-readable. This is the same challenge compilers face when pretty-printing decompiled code — it is a heuristic best-effort, not a bijection.
+
+### Why this matters for chunkseq
+
+If chunks in chunkseq store their note content as S-expression patterns rather than raw note arrays, then:
+
+- A chunk's behavior can be edited either graphically (piano roll modifies the `(seq ...)` leaves) or textually (type a tidal expression, transpile to S-expression, store)
+- Chunk-to-chunk connections become rewrite rules: connecting chunk A's output to chunk B's transpose input is equivalent to wrapping B's pattern in `(transpose (output-of A) ...)` in the S-expression
+- Saving a project is just serializing a map of S-expression trees to JSON
+- Generative patches can construct S-expressions as data and evaluate them as patterns
+
+### Open questions
+
+- Should the IL be pure S-expressions (lists + atoms) or typed nodes (tagged objects)? Typed nodes are easier to validate and pattern-match in JS; pure lists are more flexible and closer to Lisp.
+- How should time be represented in the IL? As a continuous rational ratio (like Tidal's `Time = Rational`) or as discrete steps? This is the same cycle-vs-step tension that appears elsewhere.
+- What is the right granularity for a leaf node? A single note? A beat? A step? The granularity determines how much structure is visible to rewrite rules.
+- Is `(every N f e)` rewriting at macro-expand time (static, compile-time-like) or at evaluation time (dynamic, each cycle)? The answer changes whether the IL is a static AST or a running interpreter.
+
 ## Re-entrant Patterns and Multi-Playhead Evaluation
 
 Most pattern languages — including Tidal — assume a single linear playhead that sweeps forward through time and samples each pattern expression at each point. This is clean and composable, but it forecloses a class of musically interesting behaviors that require multiple, conditionally-active, or recursively-nested playheads.
