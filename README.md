@@ -491,7 +491,64 @@ ur 12 "a b c"
 
 `ur` also accepts `name:effect` token syntax for named transformations (effects are reserved for future use and currently passed through unchanged).
 
-### 15. Fallback Single-Step Parsing
+### 15. Trig Conditions
+
+Trig conditions are terse suffixes appended directly to individual tokens. They gate whether a note fires on a given pass through the pattern, based on a playhead's pass counter or a probability value.
+
+The pass counter is **per-playhead** and **1-based** — the first time a playhead completes the full pattern it is on pass 1, the second time pass 2, and so on. Different playheads accumulate their own independent counts.
+
+#### Condition types
+
+| Syntax | Fires when | Example |
+|---|---|---|
+| `!N` | every Nth pass (passes N, 2N, 3N, …) | `hh!2` — hi-hat every other pass |
+| `!1` | first pass only | `crash!1` — crash on the intro |
+| `!>N` | after pass N (passes N+1, N+2, …) | `b3!>4` — melody enters on pass 5 |
+| `!N:M` | passes N through M inclusive | `fill!5:8` — fill runs for passes 5–8 |
+| `!N:` | passes N and beyond (open-ended) | `lead!3:` — lead stays in once introduced |
+| `%N` | complement — fires when `pass % N ≠ 0` | `oh%2` — open hat on odd passes only |
+| `?P` | P% probability each pass, independent | `bd?75` — kick fires 75% of the time |
+
+#### Combining conditions
+
+Conditions can be chained on the same token. All conditions must be satisfied for the note to fire.
+
+```
+bd!>2?50
+```
+
+After pass 2, fires with 50% probability. The pass-count gate is evaluated first; probability is only rolled if the gate passes.
+
+#### Conditions on groups
+
+A condition placed after a bracketed group applies to every event inside it.
+
+```
+s "[bd cp]!2"
+```
+
+Both `bd` and `cp` are gated to every 2nd pass. The same works with repetition: `hh*4!2` produces four hi-hats that only fire every other pass, all at once.
+
+#### A full example
+
+```tidal
+stack [
+  s "bd cp bd cp",         -- always fires
+  s "hh!2*8",              -- 8 hi-hats, but only on even passes
+  s "oh!4",                -- open hat every 4th pass
+  s "crash!8",             -- crash marks every 8th pass
+  n "c4 [e4 g4] a4 g4" # s "lead",
+  n "b3!>4" # s "lead"     -- counter-melody enters on pass 5
+]
+```
+
+With a single 1× playhead this pattern cycles through 8 passes before the crash fires and the counter-melody has been present for 4 passes. With a second playhead at a different rate, each playhead's independent pass counter means the two voices accumulate conditions at different speeds, creating structural variety from one pattern.
+
+#### Where conditions are supported
+
+Trig conditions work in the **Pattern Explorer** (`explore.html`), where playheads carry pass counters and the piano roll shows conditional notes as hatched/dimmed until they fire. In the main **Arrangement View** (`index.html`) all conditions are currently ignored — events render and play unconditionally. Full condition support in the arrangement view is planned.
+
+### 16. Fallback Single-Step Parsing
 
 If you do not use `track`, the parser still works.
 
@@ -511,7 +568,7 @@ This is interpreted as:
 
 That fallback is useful for quick experiments.
 
-### 15. CC Automation Tracks
+### 17. CC Automation Tracks
 
 MIDI CC (Control Change) messages can be sent alongside notes using `ccn` and `ccv` inside any track.
 

@@ -299,6 +299,100 @@ export function voiceFromExpression(expression, index) {
   return { instrument: `voice-${index + 1}`, pattern: expression, mode: "auto", source: expression };
 }
 
+// ── Trig conditions ───────────────────────────────────────────────────────────
+//
+// Conditions are terse suffixes on individual tokens that gate whether an event
+// fires on a given pass through the pattern. They are parsed here and evaluated
+// at playback time against a playhead's pass counter.
+//
+// Syntax (appended directly to the token, no spaces):
+//   !N      every Nth pass  (passes N, 2N, 3N, ...)   — !1 = first pass only
+//   !>N     after pass N    (passes N+1, N+2, ...)
+//   !N:M    passes N through M inclusive
+//   !N:     passes N and beyond (open-ended range)
+//   %N      complement — fires when passCount % N !== 0   (%2 = odd passes)
+//   ?P      probability P% per pass, independent of pass count
+//
+// Conditions can be combined: bd!>2?50  →  after pass 2, 50% probability
+// A condition on a group applies to all events in that group: [bd cp]!2
+//
+// The pass counter is per-playhead and 1-based (first pass = 1).
+
+export function parseCondition(token) {
+  let s = token;
+  const conds = [];
+
+  // Probability suffix ?N (integer 0-100), parsed first so it can combine
+  const probM = s.match(/^(.+)\?(\d+(?:\.\d+)?)$/);
+  if (probM) {
+    s = probM[1];
+    conds.push({ type: "prob", p: parseFloat(probM[2]) / 100 });
+  }
+
+  // Open-ended range  !N:
+  let m = s.match(/^(.+)!(\d+):$/);
+  if (m) { s = m[1]; conds.unshift({ type: "range", lo: parseInt(m[2], 10), hi: Infinity }); }
+  else {
+    // Closed range  !N:M
+    m = s.match(/^(.+)!(\d+):(\d+)$/);
+    if (m) { s = m[1]; conds.unshift({ type: "range", lo: parseInt(m[2], 10), hi: parseInt(m[3], 10) }); }
+    else {
+      // After  !>N
+      m = s.match(/^(.+)!>(\d+)$/);
+      if (m) { s = m[1]; conds.unshift({ type: "after", n: parseInt(m[2], 10) }); }
+      else {
+        // Every / first  !N
+        m = s.match(/^(.+)!(\d+)$/);
+        if (m) {
+          s = m[1];
+          const n = parseInt(m[2], 10);
+          conds.unshift(n === 1 ? { type: "first" } : { type: "every", n });
+        }
+      }
+    }
+  }
+
+  // Complement  %N  (fires when passCount % N !== 0)
+  m = s.match(/^(.+)%(\d+)$/);
+  if (m) { s = m[1]; conds.unshift({ type: "alt", n: parseInt(m[2], 10) }); }
+
+  return { base: s, conds };
+}
+
+// Evaluate a conditions array against a playhead's pass count.
+// rng is called only for prob conditions — defaults to Math.random but can be
+// replaced with a seeded function for reproducible results.
+export function evalCondition(conds, passCount, rng = Math.random) {
+  if (!conds || conds.length === 0) return true;
+  return conds.every((cond) => {
+    switch (cond.type) {
+      case "every": return passCount % cond.n === 0;
+      case "first": return passCount === 1;
+      case "after": return passCount > cond.n;
+      case "range": return passCount >= cond.lo && passCount <= cond.hi;
+      case "alt":   return passCount % cond.n !== 0;
+      case "prob":  return rng() < cond.p;
+      default:      return true;
+    }
+  });
+}
+
+// Render a conditions array back to its terse string form (for display).
+export function conditionLabel(conds) {
+  if (!conds || conds.length === 0) return "";
+  return conds.map((c) => {
+    switch (c.type) {
+      case "every": return `!${c.n}`;
+      case "first": return "!1";
+      case "after": return `!>${c.n}`;
+      case "range": return c.hi === Infinity ? `!${c.lo}:` : `!${c.lo}:${c.hi}`;
+      case "alt":   return `%${c.n}`;
+      case "prob":  return `?${Math.round(c.p * 100)}`;
+      default:      return "";
+    }
+  }).join("");
+}
+
 export function resolveInstrument(token, voice) {
   if (voice.mode === "drums") return token.toLowerCase();
   return voice.instrument;
@@ -320,31 +414,37 @@ export function resolvePitch(token, voice) {
   return 48 + (voice.instrument.length % 12);
 }
 
-export function expandPattern(pattern, start, duration, events, voice) {
+// parentConds: conditions inherited from a containing group (e.g. [bd cp]!2)
+export function expandPattern(pattern, start, duration, events, voice, parentConds = []) {
   const trimmed = pattern.trim();
   if (!trimmed) return;
 
-  const repeat = splitRepeat(trimmed);
+  // Strip any condition syntax from this token/group first.
+  // Conditions on a group propagate down to all its children.
+  const { base, conds } = parseCondition(trimmed);
+  const allConds = [...parentConds, ...conds];
+
+  const repeat = splitRepeat(base);
   if (repeat && repeat.base) {
     const step = duration / repeat.count;
     for (let i = 0; i < repeat.count; i += 1)
-      expandPattern(repeat.base, start + step * i, step, events, voice);
+      expandPattern(repeat.base, start + step * i, step, events, voice, allConds);
     return;
   }
 
-  const bracketBody = unwrapOuterBrackets(trimmed);
+  const bracketBody = unwrapOuterBrackets(base);
   if (bracketBody !== null) {
     const items = splitTopLevel(bracketBody, "space");
     if (!items.length) return;
     const step = duration / items.length;
-    items.forEach((item, i) => expandPattern(item, start + step * i, step, events, voice));
+    items.forEach((item, i) => expandPattern(item, start + step * i, step, events, voice, allConds));
     return;
   }
 
-  const items = splitTopLevel(trimmed, "space");
+  const items = splitTopLevel(base, "space");
   if (items.length > 1) {
     const step = duration / items.length;
-    items.forEach((item, i) => expandPattern(item, start + step * i, step, events, voice));
+    items.forEach((item, i) => expandPattern(item, start + step * i, step, events, voice, allConds));
     return;
   }
 
@@ -359,7 +459,8 @@ export function expandPattern(pattern, start, duration, events, voice) {
     type: voice.mode === "cc" ? "cc" : "note",
     isDrum: voice.mode === "cc" ? false : (voice.mode !== "pitched" && typeof drumNotes[token.toLowerCase()] === "number"),
     start,
-    duration
+    duration,
+    conds: allConds
   });
 }
 

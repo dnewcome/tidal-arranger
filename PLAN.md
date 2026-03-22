@@ -411,6 +411,85 @@ Specific ideas that could translate from tidal-arranger's pattern language to ch
 - How do you render a multi-playhead arrangement in a piano-roll style view? (Each playhead's events could be a different shade or layer.)
 - Is there a clean functional encoding of multi-playhead semantics that remains referentially transparent, or does it require explicit concurrency primitives?
 
+## Pattern Language for Granular Synthesis (wavmulch connection)
+
+`~/sandbox/dnewcome/wavmulch` is a granular synthesizer that already exists as a working prototype. It analyzes a corpus of WAV files into grains (100ms Hann-windowed segments), runs NMF to learn an 8-dimensional timbral feature space, and uses MIDI knobs to navigate that space in real time — selecting and triggering grains by nearest-neighbor in the feature space. The grain rate, randomness, and volume are also MIDI-controllable.
+
+The connection to the multi-playhead pattern language is direct: **granular synthesis is already multi-playhead evaluation, just operating on audio samples instead of MIDI events.** Each voice of polyphony in a granular synthesizer is a playhead reading through a source file; the grain density, position, and feature-space location are the parameters the playhead carries. The trig condition and recurrence grammar developed here could describe all of these.
+
+### The two levels of granularity
+
+**Grain level (100ms windows) — traditional granular**
+
+This is what wavmulch currently does. Each "event" in the pattern is a grain — a windowed slice of a source audio file with a position, duration, and location in the NMF feature space. A pattern of grains describes where in the source file to read, how often, and with what conditions:
+
+```
+-- pseudocode: grain pattern syntax
+grain_voice [
+  pos "0.0 0.25 0.5 0.75",    -- step through 4 positions in the source file
+  feat0 "0.2 0.8 0.5 0.3",    -- NMF component 0 value at each grain
+  rate "1 2 1 4",              -- grains per second at each step
+  grain!2,                     -- whole voice only fires every other pass
+  grain?75                     -- and with 75% probability when it does
+]
+```
+
+The trig conditions already implemented (`!N`, `?P`, `!>N`, etc.) transfer directly to grains. A grain that fires `!8` creates a sparse texture that only appears every 8th cycle — the same structural thinking as a crash cymbal, but in the audio grain domain.
+
+**Sample point level — wavetable / phase vocoder territory**
+
+At the extreme, the "events" are individual sample points in the PCM data. A playhead sweeping through the sample file at audio rate and reading each point is just a wavetable oscillator. Multiple playheads at different phases, rates, and positions through the same wavetable produce classical wavetable synthesis effects — chorus, phasing, beating. Trig conditions on sample points that skip or repeat certain regions would create glitch, stutter, and interpolation artifacts that are musically interesting.
+
+This is a much more computationally intensive model than grain-level, but the pattern language grammar could be the same — only the event resolution changes.
+
+### Playheads as grain voices
+
+Directly mapping the multi-playhead model from the pattern explorer onto wavmulch:
+
+- **Each playhead is one grain voice** — an independent reader of the grain library with its own phase, rate, and pass counter
+- **Rate** controls how fast the playhead sweeps through the pattern, which translates to grain density (grains per second)
+- **Phase offset** between playheads creates the classic granular widening/chorus effect — the same source material heard slightly displaced in time
+- **Trig conditions** create rhythmic grain patterns: `grain!2` fires on alternate passes, creating a pulsing texture without any explicit sequencing
+- **Playhead rules** (from the conditional playhead section) filter which grains a voice can select: one playhead might only select bright grains (NMF component 0 > 0.6), another only selects low-frequency grains, and together they produce a timbral counterpoint
+
+### The NMF feature space as pattern coordinates
+
+wavmulch's 8-dimensional feature space is essentially a coordinate system for timbre. A pattern expression over those coordinates navigates the timbre space over time, exactly like a melodic pattern navigates pitch space:
+
+```
+-- CC automation syntax extended to NMF coordinates:
+feat0 # ccv (sine 16 0.1 0.9)   -- sweep NMF component 0 with a sine LFO
+feat1 # ccv "0.2 0.8 0.2 0.5"   -- step component 1 through 4 values
+```
+
+The existing CC automation grammar (`ccv (sine N lo hi)`, `ccv "v0 v1 v2 ..."`) already describes this shape. The only change is that the "CC number" becomes an NMF component index and the range is 0.0–1.0 instead of 0–127. The pattern language doesn't need to change at all — just the synthesis backend that evaluates it.
+
+### A pattern-based granular instrument
+
+The combination of these ideas describes a new kind of instrument:
+
+1. **Load a sample or corpus** — the grain library is the instrument's "tuning"
+2. **Write a pattern** — describes grain positions, feature-space coordinates, density, and conditions using the existing mini-notation
+3. **Run playheads through it** — multiple playheads at different rates and phases produce polyphonic granular texture; their trig conditions and pass counters determine the large-scale structure
+4. **Export the result** — either as a WAV file (audio render) or as a MIDI file that drives the synthesizer in real time
+
+This closes the loop between the pattern language and audio synthesis: the same grammar that describes a drum loop (`s "bd cp hh*2"`) could describe a granular texture, with the drum names replaced by grain selectors and the MIDI output replaced by audio sample playback.
+
+### Specific extensions worth prototyping in wavmulch
+
+- **Pattern-driven grain triggering**: replace the continuous `GrainNote` thread with a step sequencer that evaluates a pattern expression each step, selecting grains based on the current pattern position
+- **Grain conditions**: attach trig conditions to individual grains in the library at analysis time (e.g., tag bright grains, transient grains, or grains from a specific source file); playheads with matching filters then fire or skip those grains
+- **Multi-playhead grain engine**: instead of one `GrainNote` per MIDI note, maintain a set of named playheads each with independent rate, phase, feature-space target, and condition set
+- **Feature-space path patterns**: express NMF coordinate trajectories as patterns (using the existing LFO shapes — sine, saw, tri — applied to component values over time)
+- **Cross-sample stack**: `stack` multiple grain sources — grains from kick samples layered with grains from a crash sample — with conditions controlling which layer is active at any pass
+
+### Open questions
+
+- At what time resolution does a "pass" make sense for granular? At grain rate (50ms–2s), it maps cleanly. At sample rate (22µs at 44100 Hz), pass counting becomes meaningless. The recurrence grammar probably needs a time-scale parameter.
+- How do you render a granular pattern in a piano-roll style view? The x-axis is still time, but the y-axis could be sample position, NMF component value, or pitch (if the grains are pitched). Three very different visualizations of the same data.
+- The NMF feature space has no natural ordering — component 3 is not "higher" than component 2 in any musical sense. This makes the grid metaphor of a piano roll awkward. A 2D scatter plot (two NMF components as axes, dots as grains) might be a better visualization primitive.
+- Is it worth forking wavmulch into a version that can read a pattern expression file and render to WAV offline, without real-time MIDI control? That would be the granular equivalent of this project's MIDI export.
+
 ## Notes
 
 ### Currently implemented sequence helpers

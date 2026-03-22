@@ -13,7 +13,6 @@
       --muted: #93a0ba;
       --accent: #7ae582;
       --border: #232b3c;
-      --radius: 10px;
       --mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
       --sans: "Space Grotesk", "Avenir Next", "Segoe UI", sans-serif;
     }
@@ -39,22 +38,17 @@
       border-bottom: 1px solid var(--border);
       font-size: 0.9rem;
       font-weight: 700;
-      letter-spacing: 0.02em;
     }
 
-    header span {
-      color: var(--muted);
-      font-weight: 400;
-      font-size: 0.8rem;
-    }
+    header span { color: var(--muted); font-weight: 400; font-size: 0.8rem; }
 
     .workspace {
       display: grid;
-      grid-template-columns: 400px 1fr;
+      grid-template-columns: 380px 1fr;
       min-height: 0;
     }
 
-    /* ── Left panel ─────────────────────────────────────── */
+    /* ── Left panel ───────────────────────────────────── */
     .editor-panel {
       display: grid;
       grid-template-rows: 1fr auto;
@@ -83,13 +77,13 @@
       border-top: 1px solid var(--border);
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 10px;
     }
 
     .control-row {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
       flex-wrap: wrap;
     }
 
@@ -101,24 +95,22 @@
       color: var(--ink);
       font-family: var(--mono);
       font-size: 0.78rem;
-      padding: 6px 14px;
+      padding: 6px 12px;
       cursor: pointer;
     }
-
     button:hover { background: #222c45; }
-
     button.accent {
-      background: rgba(122, 229, 130, 0.14);
-      border-color: rgba(122, 229, 130, 0.35);
+      background: rgba(122,229,130,0.12);
+      border-color: rgba(122,229,130,0.35);
       color: var(--accent);
     }
-
-    button.accent:hover { background: rgba(122, 229, 130, 0.22); }
-
+    button.accent:hover { background: rgba(122,229,130,0.2); }
     button.danger {
-      background: rgba(216, 95, 69, 0.12);
-      border-color: rgba(216, 95, 69, 0.3);
+      background: rgba(216,95,69,0.1);
+      border-color: rgba(216,95,69,0.28);
       color: #e07060;
+      padding: 3px 8px;
+      font-size: 0.7rem;
     }
 
     label.field {
@@ -129,9 +121,8 @@
       font-size: 0.78rem;
       color: var(--muted);
     }
-
     label.field input[type="number"] {
-      width: 56px;
+      width: 52px;
       background: var(--panel-strong);
       border: 1px solid var(--border);
       border-radius: 6px;
@@ -142,46 +133,57 @@
       text-align: right;
     }
 
-    .playhead-list {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
+    .section-label {
+      font-family: var(--mono);
+      font-size: 0.7rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
     }
 
-    .playhead-row {
-      display: flex;
+    /* Playhead rows */
+    .playhead-list { display: flex; flex-direction: column; gap: 5px; }
+
+    .ph-row {
+      display: grid;
+      grid-template-columns: 10px 36px 1fr auto auto;
       align-items: center;
       gap: 8px;
       font-family: var(--mono);
-      font-size: 0.76rem;
+      font-size: 0.75rem;
     }
 
-    .ph-swatch {
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-      flex: 0 0 auto;
+    .ph-swatch { width: 10px; height: 10px; border-radius: 50%; }
+
+    .ph-name { color: var(--muted); }
+
+    .ph-rate-wrap { display: flex; align-items: center; gap: 5px; }
+    .ph-rate-wrap input[type="range"] { width: 70px; accent-color: var(--accent); }
+    .ph-rate-val { width: 28px; text-align: right; color: var(--ink); }
+
+    .ph-pass { color: #5a6a8a; width: 48px; text-align: right; font-size: 0.7rem; }
+
+    /* Condition syntax reference */
+    .ref {
+      font-family: var(--mono);
+      font-size: 0.7rem;
+      color: #4a5a7a;
+      line-height: 1.7;
+      border-top: 1px solid var(--border);
+      padding-top: 8px;
     }
-
-    .ph-label { color: var(--muted); width: 22px; }
-
-    .ph-rate-wrap { display: flex; align-items: center; gap: 4px; color: var(--muted); }
-
-    .ph-rate-wrap input[type="range"] {
-      width: 80px;
-      accent-color: var(--accent);
-    }
-
-    .ph-rate-val { width: 30px; text-align: right; color: var(--ink); }
+    .ref b { color: #6a7a9a; }
 
     .status {
       font-family: var(--mono);
       font-size: 0.74rem;
       color: var(--muted);
-      min-height: 16px;
+      min-height: 14px;
+      border-top: 1px solid var(--border);
+      padding-top: 8px;
     }
 
-    /* ── Right panel ────────────────────────────────────── */
+    /* ── Right panel ──────────────────────────────────── */
     .viz-panel {
       background: var(--panel-strong);
       min-height: 0;
@@ -189,39 +191,49 @@
       position: relative;
     }
 
-    svg {
-      display: block;
-      width: 100%;
-      height: 100%;
-    }
+    svg { display: block; width: 100%; height: 100%; }
   </style>
 </head>
 <body>
   <header>
     Pattern Explorer
-    <span>single-pattern · multi-playhead</span>
+    <span>trig conditions · multi-playhead</span>
   </header>
 
   <div class="workspace">
     <div class="editor-panel">
       <textarea id="pattern-input" spellcheck="false">stack [
   s "bd cp bd cp",
-  s "hh*8",
-  n "c4 [e4 g4] a4 g4" # s "lead"
+  s "hh!2*8",
+  s "oh!4",
+  s "crash!8",
+  n "c4 [e4 g4] a4 g4" # s "lead",
+  n "b3!>4" # s "lead"
 ]</textarea>
 
       <div class="controls">
         <div class="control-row">
-          <button class="accent" id="run-btn">Run  ⏎</button>
+          <button class="accent" id="run-btn">Run</button>
           <button id="play-btn">Play</button>
           <button id="stop-btn">Stop</button>
           <label class="field">BPM <input id="bpm-input" type="number" min="30" max="240" value="120"></label>
         </div>
 
+        <div class="section-label">Playheads</div>
         <div class="playhead-list" id="playhead-list"></div>
-
         <div class="control-row">
           <button id="add-ph-btn">+ Playhead</button>
+        </div>
+
+        <div class="ref">
+          <b>!N</b> every Nth pass &nbsp;
+          <b>!1</b> first only &nbsp;
+          <b>!&gt;N</b> after pass N<br>
+          <b>!N:M</b> passes N–M &nbsp;
+          <b>!N:</b> pass N onward &nbsp;
+          <b>%N</b> complement<br>
+          <b>?P</b> P% probability &nbsp;
+          combine: <b>bd!&gt;2?50</b>
         </div>
 
         <div class="status" id="status"></div>
@@ -229,58 +241,74 @@
     </div>
 
     <div class="viz-panel" id="viz-panel">
-      <svg id="piano-roll" viewBox="0 0 800 500"></svg>
+      <svg id="piano-roll"></svg>
     </div>
   </div>
 
   <script type="module">
-    import { parseSource, instrumentColorMap, pitchRange, noteName } from "./parser.js";
+    import { parseSource, instrumentColorMap, pitchRange, noteName,
+             evalCondition, conditionLabel } from "./parser.js";
 
-    // ── State ────────────────────────────────────────────
-    const PLAYHEAD_COLORS = ["#7ae582", "#ff7c5c", "#7cb9ff", "#ffd166", "#c77dff", "#f72585"];
+    // ── Constants ─────────────────────────────────────────
+    const PH_COLORS = ["#7ae582","#ff7c5c","#7cb9ff","#ffd166","#c77dff","#f72585","#06d6a0","#ffb703"];
 
+    // ── State ─────────────────────────────────────────────
     let currentEvents = [];
+    let isPlaying = false;
     let animFrameId = null;
     let lastTimestamp = null;
-    let isPlaying = false;
-    let nextPlayheadId = 1;
+    let nextPhId = 1;
+    let playheads = [];   // { id, phase, rate, color, passCount, firedSet }
 
-    // Each playhead: { id, phase, rate, color, active (playing) }
-    let playheads = [];
+    // ── DOM ───────────────────────────────────────────────
+    const svg      = document.getElementById("piano-roll");
+    const vizPanel = document.getElementById("viz-panel");
+    const textarea = document.getElementById("pattern-input");
+    const statusEl = document.getElementById("status");
+    const bpmInput = document.getElementById("bpm-input");
+    const runBtn   = document.getElementById("run-btn");
+    const playBtn  = document.getElementById("play-btn");
+    const stopBtn  = document.getElementById("stop-btn");
+    const addPhBtn = document.getElementById("add-ph-btn");
+    const phListEl = document.getElementById("playhead-list");
 
-    // ── DOM refs ─────────────────────────────────────────
-    const svg        = document.getElementById("piano-roll");
-    const vizPanel   = document.getElementById("viz-panel");
-    const textarea   = document.getElementById("pattern-input");
-    const statusEl   = document.getElementById("status");
-    const bpmInput   = document.getElementById("bpm-input");
-    const runBtn     = document.getElementById("run-btn");
-    const playBtn    = document.getElementById("play-btn");
-    const stopBtn    = document.getElementById("stop-btn");
-    const addPhBtn   = document.getElementById("add-ph-btn");
-    const phListEl   = document.getElementById("playhead-list");
-
-    // ── Layout constants (updated on render) ─────────────
-    let layout = { margin: { top: 24, right: 16, bottom: 20, left: 80 }, width: 800, height: 500 };
+    // ── Layout (refreshed on render) ──────────────────────
+    let L = { m: { top: 24, right: 16, bottom: 20, left: 80 }, w: 800, h: 500 };
 
     // ── Helpers ───────────────────────────────────────────
     function getBpm() {
       const v = parseFloat(bpmInput.value);
       return isFinite(v) ? Math.max(30, Math.min(240, v)) : 120;
     }
+    function loopMs() { return (60000 / getBpm()) * 4; }
+    function setStatus(s) { statusEl.textContent = s; }
+    function evKey(ev) { return `${ev.start.toFixed(8)}_${ev.pitch}`; }
 
-    function getLoopDurationMs() {
-      return (60000 / getBpm()) * 4; // 1 step = 4 beats
+    // ── Condition evaluation ──────────────────────────────
+    // Pre-roll which events fire for a playhead on its current pass.
+    // Probability is rolled here once per pass, not per frame.
+    function rollFiredSet(ph) {
+      const s = new Set();
+      for (const ev of currentEvents) {
+        if (evalCondition(ev.conds, ph.passCount)) s.add(evKey(ev));
+      }
+      return s;
     }
-
-    function setStatus(msg) { statusEl.textContent = msg; }
 
     // ── Parse & render ────────────────────────────────────
     function run() {
       try {
         currentEvents = parseSource(textarea.value);
-        renderStaticPianoRoll(currentEvents);
-        setStatus(`${currentEvents.length} events parsed.`);
+        // Assign stable keys
+        currentEvents.forEach((ev) => { ev._key = evKey(ev); });
+        // Re-roll all playheads for pass 1
+        playheads.forEach((ph) => {
+          ph.passCount = 1;
+          ph.phase = 0;
+          ph.firedSet = rollFiredSet(ph);
+        });
+        renderPianoRoll();
+        setStatus(`${currentEvents.length} events · ${currentEvents.filter(e => e.conds && e.conds.length).length} conditional`);
       } catch (err) {
         currentEvents = [];
         renderEmpty(err.message);
@@ -288,12 +316,12 @@
       }
     }
 
-    // ── Static piano-roll render (no playheads) ───────────
-    function renderStaticPianoRoll(events) {
+    // ── Piano roll render ─────────────────────────────────
+    function renderPianoRoll() {
       const w = Math.max(200, vizPanel.clientWidth);
       const h = Math.max(200, vizPanel.clientHeight);
       const m = { top: 24, right: 16, bottom: 20, left: 80 };
-      layout = { margin: m, width: w, height: h };
+      L = { m, w, h };
 
       const iw = w - m.left - m.right;
       const ih = h - m.top - m.bottom;
@@ -302,65 +330,90 @@
       svg.setAttribute("width", w);
       svg.setAttribute("height", h);
 
-      const noteEvents = events.filter((e) => e.type !== "cc");
-      const range = noteEvents.length ? pitchRange(noteEvents) : { min: 60, max: 72 };
+      const noteEvents = currentEvents.filter((e) => e.type !== "cc");
+      const range = noteEvents.length ? pitchRange(noteEvents) : { min: 55, max: 75 };
       const pitchCount = range.max - range.min + 1;
       const rowH = ih / pitchCount;
-      const colorMap = instrumentColorMap(events);
+      const colorMap = instrumentColorMap(currentEvents);
 
-      const parts = [];
-      parts.push(`<rect width="${w}" height="${h}" fill="#0c1018"></rect>`);
-      parts.push(`<defs><filter id="glow"><feDropShadow dx="0" dy="0" stdDeviation="4" flood-color="#fff" flood-opacity="0.5"/></filter></defs>`);
+      const p = [];
+      p.push(`<rect width="${w}" height="${h}" fill="#0b0e15"/>`);
+      p.push(`<defs>
+        <filter id="glow"><feDropShadow dx="0" dy="0" stdDeviation="3.5" flood-color="#fff" flood-opacity="0.55"/></filter>
+        <pattern id="cond-hatch" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)">
+          <line x1="0" y1="0" x2="0" y2="6" stroke="rgba(255,255,255,0.12)" stroke-width="2.5"/>
+        </pattern>
+      </defs>`);
 
-      // Piano roll rows
+      // Piano key rows
       for (let pitch = range.min; pitch <= range.max; pitch++) {
         const row = range.max - pitch;
         const y = m.top + row * rowH;
-        const isBlack = [1, 3, 6, 8, 10].includes(pitch % 12);
-        parts.push(`<rect x="${m.left}" y="${y}" width="${iw}" height="${rowH}" fill="${isBlack ? "rgba(17,17,17,0.06)" : "rgba(255,255,255,0.02)"}"/>`);
-        parts.push(`<line x1="${m.left}" y1="${y}" x2="${w - m.right}" y2="${y}" stroke="rgba(255,255,255,0.05)"/>`);
+        const isBlack = [1,3,6,8,10].includes(pitch % 12);
+        const isC = pitch % 12 === 0;
+        p.push(`<rect x="${m.left}" y="${y}" width="${iw}" height="${rowH}" fill="${isBlack ? "rgba(20,20,30,0.7)" : "rgba(255,255,255,0.02)"}"/>`);
+        p.push(`<line x1="${m.left}" y1="${y}" x2="${w - m.right}" y2="${y}" stroke="${isC ? "rgba(255,255,255,0.1)" : "rgba(255,255,255,0.04)"}"/>`);
       }
 
-      // Beat grid (4 beats per step)
+      // Beat grid
       for (let beat = 0; beat <= 4; beat++) {
         const x = m.left + (iw * beat) / 4;
-        const isMajor = beat % 4 === 0;
-        parts.push(`<line x1="${x}" y1="${m.top}" x2="${x}" y2="${h - m.bottom}" stroke="${isMajor ? "rgba(255,255,255,0.15)" : "rgba(255,255,255,0.06)"}" stroke-width="${isMajor ? 1.2 : 0.8}"/>`);
+        p.push(`<line x1="${x}" y1="${m.top}" x2="${x}" y2="${h - m.bottom}" stroke="${beat % 4 === 0 ? "rgba(255,255,255,0.18)" : "rgba(255,255,255,0.06)"}" stroke-width="${beat % 4 === 0 ? 1.2 : 0.8}"/>`);
+        if (beat < 4) p.push(`<text x="${x + 4}" y="${m.top - 6}" fill="#3a4a6a" font-family="IBM Plex Mono,monospace" font-size="9">beat ${beat+1}</text>`);
       }
 
       // Pitch labels
-      if (rowH > 8) {
-        parts.push(`<text x="${m.left - 6}" y="${m.top + 10}" text-anchor="end" fill="#5a6a8a" font-family="IBM Plex Mono,monospace" font-size="9">${noteName(range.max)}</text>`);
-        parts.push(`<text x="${m.left - 6}" y="${m.top + ih - 2}" text-anchor="end" fill="#5a6a8a" font-family="IBM Plex Mono,monospace" font-size="9">${noteName(range.min)}</text>`);
+      if (rowH >= 6) {
+        p.push(`<text x="${m.left - 5}" y="${m.top + 10}" text-anchor="end" fill="#3a4a6a" font-family="IBM Plex Mono,monospace" font-size="9">${noteName(range.max)}</text>`);
+        p.push(`<text x="${m.left - 5}" y="${m.top + ih - 2}" text-anchor="end" fill="#3a4a6a" font-family="IBM Plex Mono,monospace" font-size="9">${noteName(range.min)}</text>`);
       }
 
       // Note rectangles
-      noteEvents.forEach((event) => {
-        const x = m.left + event.start * iw;
-        const nw = Math.max(4, event.duration * iw - 2);
-        const y = m.top + (range.max - event.pitch) * rowH + 1;
-        const nh = Math.max(4, rowH - 2);
-        const fill = colorMap.get(event.instrument) || "#7ae582";
-        parts.push(
-          `<g data-eid="${event.start.toFixed(6)}-${event.pitch}">` +
-          `<rect class="note" x="${x}" y="${y}" width="${nw}" height="${nh}" rx="4" fill="${fill}" opacity="0.82"/>` +
-          `<rect x="${x}" y="${y}" width="${nw}" height="${nh}" rx="4" fill="none" stroke="rgba(0,0,0,0.2)" stroke-width="0.8"/>` +
-          (nw > 30 && nh > 10 ? `<text x="${x + 5}" y="${y + nh * 0.68}" fill="rgba(255,255,255,0.85)" font-family="IBM Plex Mono,monospace" font-size="9">${event.label}</text>` : "") +
-          `</g>`
-        );
+      noteEvents.forEach((ev) => {
+        const x = m.left + ev.start * iw;
+        const nw = Math.max(4, ev.duration * iw - 2);
+        const y = m.top + (range.max - ev.pitch) * rowH + 1;
+        const nh = Math.max(3, rowH - 2);
+        const fill = colorMap.get(ev.instrument) || "#7ae582";
+        const hasCondition = ev.conds && ev.conds.length > 0;
+        const condStr = hasCondition ? conditionLabel(ev.conds) : "";
+
+        // Base note rect
+        p.push(`<g data-key="${ev._key}">`);
+        p.push(`<rect class="note-bg" x="${x}" y="${y}" width="${nw}" height="${nh}" rx="3" fill="${fill}" opacity="${hasCondition ? "0.45" : "0.82"}"/>`);
+
+        // Hatch overlay for conditional notes (shows they don't always fire)
+        if (hasCondition) {
+          p.push(`<rect x="${x}" y="${y}" width="${nw}" height="${nh}" rx="3" fill="url(#cond-hatch)"/>`);
+        }
+
+        // Outline
+        p.push(`<rect class="note-outline" x="${x}" y="${y}" width="${nw}" height="${nh}" rx="3" fill="none" stroke="${hasCondition ? "rgba(255,255,255,0.25)" : "rgba(0,0,0,0.22)"}" stroke-width="${hasCondition ? "1" : "0.8"}"/>`);
+
+        // Labels
+        if (nw > 22 && nh > 9) {
+          // Note name
+          p.push(`<text class="note-label" x="${x + 4}" y="${y + nh * 0.68}" fill="rgba(255,255,255,0.85)" font-family="IBM Plex Mono,monospace" font-size="9">${ev.label}</text>`);
+        }
+        if (hasCondition && nw > 14 && nh > 9) {
+          // Condition badge — top-right corner of note
+          p.push(`<text x="${x + nw - 3}" y="${y + 8}" text-anchor="end" fill="rgba(255,220,100,0.9)" font-family="IBM Plex Mono,monospace" font-size="8" font-weight="700">${condStr}</text>`);
+        }
+
+        p.push(`</g>`);
       });
 
-      // Playhead lines (one per playhead, positioned at phase 0 initially)
+      // Playhead lines (positioned at current phase)
       playheads.forEach((ph) => {
-        const x = m.left;
-        parts.push(
+        const x = m.left + ph.phase * iw;
+        p.push(
           `<line id="ph-line-${ph.id}" ` +
           `x1="${x}" y1="${m.top}" x2="${x}" y2="${h - m.bottom}" ` +
-          `stroke="${ph.color}" stroke-width="1.5" opacity="0.85" stroke-dasharray="4 3"/>`
+          `stroke="${ph.color}" stroke-width="1.5" opacity="0.9" stroke-dasharray="4 3"/>`
         );
       });
 
-      svg.innerHTML = parts.join("");
+      svg.innerHTML = p.join("");
     }
 
     function renderEmpty(msg = "") {
@@ -369,137 +422,151 @@
       svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
       svg.setAttribute("width", w);
       svg.setAttribute("height", h);
-      svg.innerHTML = [
-        `<rect width="${w}" height="${h}" fill="#0c1018"/>`,
-        `<text x="${w / 2}" y="${h / 2}" text-anchor="middle" fill="#3a4560" font-family="IBM Plex Mono,monospace" font-size="14">${msg || "Run a pattern to begin"}</text>`
-      ].join("");
+      svg.innerHTML = `<rect width="${w}" height="${h}" fill="#0b0e15"/>
+        <text x="${w/2}" y="${h/2}" text-anchor="middle" fill="#2a3450" font-family="IBM Plex Mono,monospace" font-size="14">${msg || "Run a pattern to begin"}</text>`;
     }
 
-    // ── Playhead animation ────────────────────────────────
-    function updatePlayheadPositions(timestamp) {
+    // ── Animation loop ────────────────────────────────────
+    function tick(timestamp) {
       if (!isPlaying) return;
       if (lastTimestamp === null) lastTimestamp = timestamp;
-      const dt = timestamp - lastTimestamp;
+      const dt = Math.min(timestamp - lastTimestamp, 100); // cap at 100ms to avoid jump on tab-switch
       lastTimestamp = timestamp;
 
-      const loopMs = getLoopDurationMs();
-      const { margin: m, width: w, height: h } = layout;
+      const lms = loopMs();
+      const { m, w, h } = L;
       const iw = w - m.left - m.right;
 
       playheads.forEach((ph) => {
-        ph.phase = (ph.phase + ph.rate * dt / loopMs) % 1;
+        const newPhase = ph.phase + ph.rate * dt / lms;
+        const wraps = Math.floor(newPhase);
+        if (wraps > 0) {
+          ph.passCount += wraps;
+          ph.firedSet = rollFiredSet(ph);
+          updatePassDisplay(ph);
+        }
+        ph.phase = newPhase - wraps;
+
         const x = m.left + ph.phase * iw;
         const line = svg.getElementById(`ph-line-${ph.id}`);
-        if (line) {
-          line.setAttribute("x1", x);
-          line.setAttribute("x2", x);
+        if (line) { line.setAttribute("x1", x); line.setAttribute("x2", x); }
+      });
+
+      // Highlight notes covered by any active playhead that fired this pass
+      const noteGroups = svg.querySelectorAll("g[data-key]");
+      noteGroups.forEach((g) => {
+        const key = g.getAttribute("data-key");
+        const ev = currentEvents.find((e) => e._key === key);
+        if (!ev) return;
+
+        const evEnd = ev.start + ev.duration;
+        const coveredAndFired = playheads.some((ph) =>
+          ph.firedSet.has(key) &&
+          ph.phase >= ev.start &&
+          ph.phase < evEnd
+        );
+
+        const bg = g.querySelector(".note-bg");
+        const outline = g.querySelector(".note-outline");
+        const label = g.querySelector(".note-label");
+        if (!bg) return;
+
+        if (coveredAndFired) {
+          bg.setAttribute("opacity", "1");
+          bg.setAttribute("filter", "url(#glow)");
+          outline?.setAttribute("stroke", "rgba(255,255,255,0.8)");
+          outline?.setAttribute("stroke-width", "1.5");
+          label?.setAttribute("fill", "rgba(255,255,255,1)");
+        } else {
+          const hasCond = ev.conds && ev.conds.length > 0;
+          bg.setAttribute("opacity", hasCond ? "0.45" : "0.82");
+          bg.removeAttribute("filter");
+          outline?.setAttribute("stroke", hasCond ? "rgba(255,255,255,0.25)" : "rgba(0,0,0,0.22)");
+          outline?.setAttribute("stroke-width", hasCond ? "1" : "0.8");
+          label?.setAttribute("fill", "rgba(255,255,255,0.85)");
         }
       });
 
-      // Highlight notes covered by any playhead
-      const noteEls = svg.querySelectorAll(".note");
-      noteEls.forEach((el) => {
-        const g = el.parentElement;
-        const eidAttr = g?.getAttribute("data-eid");
-        if (!eidAttr) return;
-        const [startStr, pitchStr] = eidAttr.split("-");
-        const evStart = parseFloat(startStr);
-        // find the matching event to get duration
-        const event = currentEvents.find((e) => Math.abs(e.start - evStart) < 1e-4 && String(e.pitch) === pitchStr);
-        if (!event) return;
-        const covered = playheads.some((ph) => {
-          const phEnd = ph.phase;
-          const evEnd = event.start + event.duration;
-          // check if playhead phase falls within this event's window
-          return ph.phase >= event.start && ph.phase < evEnd;
-        });
-        el.setAttribute("opacity", covered ? "1" : "0.82");
-        el.setAttribute("filter", covered ? "url(#glow)" : "");
-      });
-
-      animFrameId = requestAnimationFrame(updatePlayheadPositions);
+      animFrameId = requestAnimationFrame(tick);
     }
 
-    function startAnimation() {
-      if (animFrameId !== null) cancelAnimationFrame(animFrameId);
-      lastTimestamp = null;
-      animFrameId = requestAnimationFrame(updatePlayheadPositions);
-    }
-
-    function stopAnimation() {
-      if (animFrameId !== null) { cancelAnimationFrame(animFrameId); animFrameId = null; }
-      lastTimestamp = null;
-    }
-
-    // ── Playback controls ─────────────────────────────────
+    // ── Playback ──────────────────────────────────────────
     function play() {
       if (!currentEvents.length) { setStatus("Run a pattern first."); return; }
       isPlaying = true;
+      lastTimestamp = null;
       playBtn.textContent = "Playing";
-      startAnimation();
-      setStatus(`Playing at ${getBpm()} BPM · ${playheads.length} playhead${playheads.length === 1 ? "" : "s"}`);
+      animFrameId = requestAnimationFrame(tick);
+      setStatus(`Playing · ${playheads.length} playhead${playheads.length === 1 ? "" : "s"} · ${getBpm()} BPM`);
     }
 
     function stop() {
       isPlaying = false;
-      stopAnimation();
+      if (animFrameId) { cancelAnimationFrame(animFrameId); animFrameId = null; }
       playBtn.textContent = "Play";
-      // Reset playhead positions to 0
-      playheads.forEach((ph) => { ph.phase = 0; });
-      renderStaticPianoRoll(currentEvents);
+      // Reset all playheads to pass 1, phase 0
+      playheads.forEach((ph) => {
+        ph.phase = 0;
+        ph.passCount = 1;
+        ph.firedSet = rollFiredSet(ph);
+        updatePassDisplay(ph);
+      });
+      if (currentEvents.length) renderPianoRoll();
       setStatus("Stopped.");
     }
 
     // ── Playhead management ───────────────────────────────
     function addPlayhead(rate = 1.0) {
-      const id = nextPlayheadId++;
-      const color = PLAYHEAD_COLORS[(playheads.length) % PLAYHEAD_COLORS.length];
-      const ph = { id, phase: 0, rate, color };
+      const id = nextPhId++;
+      const color = PH_COLORS[(playheads.length) % PH_COLORS.length];
+      const ph = { id, phase: 0, rate, color, passCount: 1, firedSet: new Set() };
+      ph.firedSet = rollFiredSet(ph);
       playheads.push(ph);
-      renderPlayheadControls();
-      if (currentEvents.length) renderStaticPianoRoll(currentEvents);
+      rebuildPhControls();
+      if (currentEvents.length) renderPianoRoll();
     }
 
     function removePlayhead(id) {
       playheads = playheads.filter((ph) => ph.id !== id);
-      renderPlayheadControls();
-      if (currentEvents.length) renderStaticPianoRoll(currentEvents);
+      rebuildPhControls();
+      if (currentEvents.length) renderPianoRoll();
     }
 
-    function renderPlayheadControls() {
+    function updatePassDisplay(ph) {
+      const el = document.getElementById(`ph-pass-${ph.id}`);
+      if (el) el.textContent = `pass ${ph.passCount}`;
+    }
+
+    function rebuildPhControls() {
       phListEl.innerHTML = "";
       playheads.forEach((ph) => {
         const row = document.createElement("div");
-        row.className = "playhead-row";
+        row.className = "ph-row";
         row.innerHTML = `
           <span class="ph-swatch" style="background:${ph.color}"></span>
-          <span class="ph-label">Ph${ph.id}</span>
-          <span class="ph-rate-wrap">
-            rate
+          <span class="ph-name">ph${ph.id}</span>
+          <div class="ph-rate-wrap">
             <input type="range" min="0.25" max="4" step="0.05" value="${ph.rate}" data-id="${ph.id}">
             <span class="ph-rate-val" id="ph-rate-val-${ph.id}">${ph.rate.toFixed(2)}×</span>
-          </span>
-          <button class="danger" data-remove="${ph.id}" style="padding:3px 8px;font-size:0.7rem">✕</button>
+          </div>
+          <span class="ph-pass" id="ph-pass-${ph.id}">pass ${ph.passCount}</span>
+          <button class="danger" data-remove="${ph.id}">✕</button>
         `;
         phListEl.appendChild(row);
       });
 
       phListEl.querySelectorAll("input[type=range]").forEach((slider) => {
-        slider.addEventListener("input", (e) => {
-          const id = parseInt(e.target.dataset.id);
-          const ph = playheads.find((p) => p.id === id);
-          if (ph) {
-            ph.rate = parseFloat(e.target.value);
-            const valEl = document.getElementById(`ph-rate-val-${id}`);
-            if (valEl) valEl.textContent = ph.rate.toFixed(2) + "×";
-          }
+        slider.addEventListener("input", () => {
+          const ph = playheads.find((p) => p.id === parseInt(slider.dataset.id));
+          if (!ph) return;
+          ph.rate = parseFloat(slider.value);
+          const v = document.getElementById(`ph-rate-val-${ph.id}`);
+          if (v) v.textContent = ph.rate.toFixed(2) + "×";
         });
       });
 
       phListEl.querySelectorAll("button[data-remove]").forEach((btn) => {
-        btn.addEventListener("click", (e) => {
-          removePlayhead(parseInt(btn.dataset.remove));
-        });
+        btn.addEventListener("click", () => removePlayhead(parseInt(btn.dataset.remove)));
       });
     }
 
@@ -508,13 +575,12 @@
       if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); run(); }
     });
 
-    // ── Wire up buttons ───────────────────────────────────
     runBtn.addEventListener("click", run);
     playBtn.addEventListener("click", play);
     stopBtn.addEventListener("click", stop);
     addPhBtn.addEventListener("click", () => addPlayhead(1.0));
 
-    // ── Init ─────────────────────────────────────────────
+    // ── Init ──────────────────────────────────────────────
     addPlayhead(1.0);
     addPlayhead(1.5);
     run();
