@@ -24,13 +24,25 @@ Real-time playback is a composition aid, not the end product. The pattern langua
 
 ## What The App Does
 
-The app lets you:
+The project has two HTML files:
+
+**`index.html`** — the main song arrangement view
 
 - type pattern source into a slide-out editor
 - parse that source into a multi-track arrangement
 - render the arrangement as a piano-roll style SVG view
 - send note output over Web MIDI
 - visually highlight notes as they play instead of using a separate playhead bar
+- export the arrangement as a MIDI file
+
+**`explore.html`** — the pattern explorer
+
+- two-panel layout: code editor on the left, piano roll on the right
+- multiple independent playheads, each with its own rate and pass counter
+- trig conditions rendered as hatched/dimmed notes until they fire
+- designed for experimenting with single patterns and multi-playhead interaction
+
+Both files import from `parser.js`, which contains all parsing logic and has no DOM dependencies.
 
 The current language is Tidal-inspired, not a full Tidal interpreter.
 
@@ -404,7 +416,44 @@ Example:
 cat (replicate 4 p)
 ```
 
-### 13. `let` Bindings
+### 13. `.N` Step Repetition
+
+The `.N` suffix repeats a sequence expression N times, expanding time rather than subdividing it. It is the sequential counterpart to `*N` (which subdivides).
+
+```tidal
+verse.4          -- 4 copies of verse, one per step
+```
+
+It works on any expression including parenthesized groups:
+
+```tidal
+(verse.3 chorus).4    -- [verse verse verse chorus] repeated 4 times = 16 steps
+```
+
+This makes `.N` the primary tool for building song structure:
+
+```tidal
+let verse  = stack [ s "bd cp bd cp" ]
+let chorus = stack [ s "bd*4" ]
+
+seqP [
+  (verse.3 chorus).4   -- AAAB × 4 = 16 steps
+]
+```
+
+### 14. Space-Separated Sequence Expressions
+
+Inside a `seqP` item, bare identifiers separated by spaces expand into sequential steps. Each identifier is resolved from `let` bindings, and `.N` suffixes are expanded inline.
+
+```tidal
+seqP [
+  intro.8 verse.16 chorus.16 bridge.8 outro.8
+]
+```
+
+This expands to 56 steps without any `cat` or `replicate` syntax. The guard is that all space-separated parts must be bare identifiers (optionally with `.N`) or parenthesized groups — complex expressions like `stack [...]` are not split.
+
+### 16. `let` Bindings
 
 Top-level and track-local `let` bindings are implemented.
 
@@ -443,7 +492,7 @@ track drums {
 }
 ```
 
-### 14. `ur`
+### 17. `ur`
 
 `ur` is the primary arrangement combinator. It builds a longer sequence from named patterns distributed across a fixed number of steps.
 
@@ -491,7 +540,7 @@ ur 12 "a b c"
 
 `ur` also accepts `name:effect` token syntax for named transformations (effects are reserved for future use and currently passed through unchanged).
 
-### 15. Trig Conditions
+### 18. Trig Conditions
 
 Trig conditions are terse suffixes appended directly to individual tokens. They gate whether a note fires on a given pass through the pattern, based on a playhead's pass counter or a probability value.
 
@@ -544,11 +593,40 @@ stack [
 
 With a single 1× playhead this pattern cycles through 8 passes before the crash fires and the counter-melody has been present for 4 passes. With a second playhead at a different rate, each playhead's independent pass counter means the two voices accumulate conditions at different speeds, creating structural variety from one pattern.
 
+#### Conditions at every level
+
+Conditions can be applied at any level of the pattern hierarchy:
+
+| Level | Example | Meaning |
+|---|---|---|
+| Token | `hh!2` | this note every 2nd pass |
+| Group | `[bd cp]!2` | both notes every 2nd pass |
+| Voice | `s "bd cp"!2` | entire voice every 2nd pass |
+| Step | `stack [...]!2:` | entire seqP step from pass 2 onward |
+| Let binding ref | `verse!2` | named pattern every 2nd pass |
+
 #### Where conditions are supported
 
 Trig conditions work in the **Pattern Explorer** (`explore.html`), where playheads carry pass counters and the piano roll shows conditional notes as hatched/dimmed until they fire. In the main **Arrangement View** (`index.html`) all conditions are currently ignored — events render and play unconditionally. Full condition support in the arrangement view is planned.
 
-### 16. Fallback Single-Step Parsing
+### 19. Segment Labels
+
+`let` binding names are preserved through the evaluation pipeline as **content labels**. Each `seqP` step that originated from a named binding carries that name as its label.
+
+In the arrangement view, segment blocks show their label instead of a generic index:
+
+```tidal
+let verse  = stack [ s "bd cp bd cp" ]
+let chorus = stack [ s "bd*4" ]
+
+seqP [ verse.3 chorus ]
+```
+
+The four rendered segments are labeled `verse`, `verse`, `verse`, and `chorus`.
+
+Content labels propagate through `.N`, `replicate`, `cat`, and `ur` — so `(verse.3 chorus).4` produces 16 correctly labeled segments. Intermediate composition names do not overwrite the underlying content labels: if `let phrase = verse.3 chorus`, using `phrase.4` still labels each segment as `verse` or `chorus`, not `phrase`.
+
+### 21. Fallback Single-Step Parsing
 
 If you do not use `track`, the parser still works.
 
@@ -568,7 +646,7 @@ This is interpreted as:
 
 That fallback is useful for quick experiments.
 
-### 17. CC Automation Tracks
+### 22. CC Automation Tracks
 
 MIDI CC (Control Change) messages can be sent alongside notes using `ccn` and `ccv` inside any track.
 
@@ -889,43 +967,42 @@ The parser does not currently implement:
 
 ## Implementation Notes
 
-Everything is in `index.html`.
+The project is split across three files:
 
-Key implementation areas:
+- **`parser.js`** — all parsing logic, no DOM dependencies. Can be imported by any HTML file.
+- **`index.html`** — song arrangement view (editor drawer, SVG piano roll, Web MIDI, MIDI export)
+- **`explore.html`** — pattern explorer (multi-playhead, trig condition visualization)
 
-- token and top-level splitting
-- stack and event parsing
-- sequence-expression expansion
-- arrangement construction
-- drawer UI
-- SVG rendering
-- Web MIDI transport
+Both HTML files use `<script type="module">` and require a local web server (`python3 -m http.server 8080`) — `file://` URLs block ES module imports.
 
-Useful entry points in the code:
+Key implementation areas in `parser.js`:
 
-- `splitTopLevel`: token splitting for space/comma-separated structures
-- `splitRepeat`: repeat suffix detection
-- `extractStackVoices`: stack voice extraction
-- `parseSource`: one pattern expression into events
-- `expandSequenceExpression`: `cat`, `replicate`, and identifier expansion
-- `extractLetBindings`: `let` binding collection
-- `parseArrangement`: full arrangement parsing
-- `renderArrangement`: SVG arrangement renderer (note tracks and CC automation lanes)
-- `voiceFromExpression`: voice type detection including CC voices
-- `expandLfo`: LFO waveform expansion into discrete CC value steps
-- `refreshMidiOutputs`: Web MIDI output discovery
-- `startPlayback`: playback scheduling
-- `triggerEvent`: note-on/off and CC message dispatch
-- `setDrawerOpen`: editor drawer toggle
+- `splitTopLevel` — token splitting for space/comma-separated structures
+- `splitRepeat` — repeat suffix (`*N`) detection
+- `parseCondition` / `evalCondition` / `conditionLabel` — trig condition parsing and evaluation
+- `expandPattern` — recursive mini-notation expansion with condition propagation
+- `voiceFromExpression` — voice type detection (`s`, `n`, `ccn`, custom)
+- `parseSource` — one pattern expression into a list of events
+- `expandSequenceExpression` — `cat`, `replicate`, `ur`, `.N`, space-separated sequences
+- `extractLetBindings` — `let` binding collection with content label stamping
+- `parseArrangement` — full arrangement parsing into tracks and segments
+
+Key areas in `index.html`:
+
+- `renderArrangement` — SVG renderer for note tracks and CC automation lanes
+- `startPlayback` / `triggerEvent` — Web MIDI scheduling and note-on/off dispatch
+- `exportMidi` — MIDI file export via Blob download
+- `setDrawerOpen` — editor drawer toggle
 
 ## Current Design Direction
 
-There is already a `PLAN.md` file in the repo for follow-up language work.
+See `PLAN.md` for the full research context and language roadmap.
 
 Short version:
 
-- `cat` and `replicate` are now implemented first
-- `ur` is intentionally deferred for later
+- `cat`, `replicate`, `ur`, `.N` repetition, and space-separated sequences are all implemented
+- trig conditions work at all levels of the pattern hierarchy
+- segment content labels are preserved through composition
 - `seqP` likely needs to move closer to actual Tidal semantics over time
 
 ## Future Work
@@ -954,15 +1031,13 @@ These features are part of the standard mini-notation spec (see pattrns prior ar
 
 ### Language Features (longer term)
 
-- Add `ur`
 - Refine `seqP` timing semantics toward real Tidal semantics
-- Add more composition helpers
 - `midichan` override per voice or CC track
 - Support patterned `ccn` (multiple CC controllers in one expression)
+- Trig condition evaluation in the main arrangement view
 
 ### UI / Rendering
 
-- Viewport zoom and horizontal scroll
 - Pattern validation and better parser diagnostics
 - CC: continuous LFO interpolation between steps (currently discrete)
 
