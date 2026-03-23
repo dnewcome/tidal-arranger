@@ -615,6 +615,56 @@ This closes the loop between the pattern language and audio synthesis: the same 
 - The NMF feature space has no natural ordering — component 3 is not "higher" than component 2 in any musical sense. This makes the grid metaphor of a piano roll awkward. A 2D scatter plot (two NMF components as axes, dots as grains) might be a better visualization primitive.
 - Is it worth forking wavmulch into a version that can read a pattern expression file and render to WAV offline, without real-time MIDI control? That would be the granular equivalent of this project's MIDI export.
 
+## Real-Time Linear Score Generation from Multi-Playhead Patterns
+
+### The idea
+
+The multi-playhead view in `explore.html` runs patterns in real time with independent playhead rates and pass counters. Right now the view shows the static piano roll and highlights notes as they fire. A compelling extension would be to record the live output and render it as a scrolling linear arrangement — a score that grows rightward as the pattern plays, accumulating a permanent record of what actually happened.
+
+This is closer to what Tidal does visually (pattern → time → events), but built around the specific strengths of this project: readable, zoomable, WebGL-rendered piano rolls rather than the minimal dot-matrix displays typically built into Tidal tools.
+
+### What this would look like
+
+As a multi-playhead pattern plays, each fired event gets appended to a growing event buffer. A second canvas panel (below or beside the existing pattern view) renders this buffer as a conventional left-to-right piano roll — the same WebGL arrangement renderer used in `index.html`, but driven by the live event stream instead of a pre-computed arrangement. The scroll position advances with playback so the most recent events are always visible, while earlier history remains scrollable.
+
+The result is a two-panel view:
+- **Top**: the static pattern definition (as in `explore.html` today)
+- **Bottom**: the living score — the actual sequence of events generated so far, laid out in real time
+
+### Why this is interesting
+
+Multi-playhead patterns with trig conditions produce structures that are not obvious from reading the pattern alone. The combination of independent rates, pass counters, and stochastic conditions creates emergent long-form structure. The linear score makes that structure legible: you can see phrases form, conditions accumulate, and recurring motifs appear at different time scales — things that are hard to perceive while listening but obvious on a timeline.
+
+It also functions as a composition tool: you run a pattern, read the generated score, identify what you like, and transcribe or refine it back into the static arrangement format.
+
+### Relationship to Tidal
+
+This puts the project in direct conversation with Tidal's visualization ecosystem. Tidal has pattern visualizers (Estuary, the built-in scope in SuperCollider), but they are generally real-time only — they show the current cycle, not an accumulating history. A high-quality scrolling score that persists and is legible at multiple zoom levels would be meaningfully better.
+
+The question of whether to build this inside the current project or as a standalone Tidal visualizer is worth thinking through:
+
+**Inside this project**: straightforward, since the WebGL renderer and event model are already in place. Works with the existing pattern language. Limited to patterns expressible in this system (not full Tidal).
+
+**As a standalone Tidal visualizer**: broader applicability, but requires a different input — either OSC messages from SuperCollider/Tidal, or parsing actual Tidal syntax (which is a much larger problem). The OSC approach is feasible: Tidal can send OSC, and a browser tool could receive it via a small WebSocket bridge. The score renderer itself would be largely the same WebGL code.
+
+**As a visualizer for a Tidal-derived language**: the middle path. Rather than targeting full Tidal + SuperCollider, target one of the self-contained Tidal-derived systems (pattrns, Strudel, or this project's own language) where the full stack is accessible from JavaScript. Strudel in particular runs entirely in the browser and has an OSC/MIDI output layer — it would be possible to hook its event stream directly into this renderer without any bridge process.
+
+### What "readable score" means here
+
+The existing piano roll is already more readable than most Tidal visualizations. The additional properties that would make it genuinely score-like:
+
+- **Segment labels**: each phrase or section boundary annotated with the pattern name or pass number that produced it
+- **Multi-rate alignment**: if two playheads are at rates 1× and 1.5×, their events appear on a shared timeline so the polyrhythmic relationship is visually clear
+- **Condition annotations**: events that fired conditionally could be marked (e.g., a subtle dot or color shift indicating "this fired on pass 4 of the inner pattern")
+- **Export**: the accumulated score is a complete `currentArrangement`-compatible data structure, so it can be exported directly as a MIDI file or saved as a tidal arrangement text
+
+### Open questions
+
+- How long should the history buffer be? Unlimited (with virtual scrolling) or capped at N bars?
+- Should the score be exportable mid-playback as a MIDI file or tidal arrangement?
+- For the Tidal visualizer direction: is OSC-over-WebSocket a viable bridge, or does it require too much infrastructure? Strudel's event model may be easier to target since it runs in-browser.
+- Does the "readable score" goal eventually push toward actual music notation (staves, note heads) rather than a piano roll? For rhythmically complex patterns, standard notation may be harder to read than a piano roll; for melodic content, the inverse is often true.
+
 ## Notes
 
 ### Currently implemented sequence helpers
