@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MIDI → Tidal</title>
+  <style>
+    :root {
+      --bg: #0b0e15;
+      --panel: #111520;
+      --border: #1e2535;
+      --ink: #c8d6f0;
+      --ink-dim: #6b7a99;
+      --accent: #7c5cff;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--ink);
+      font-family: system-ui, sans-serif;
+      font-size: 14px;
+      padding: 32px;
+      max-width: 860px;
+      margin: 0 auto;
+    }
+    h1 {
+      font-size: 1.1rem;
+      letter-spacing: -0.02em;
+      margin-bottom: 24px;
+      color: var(--ink-dim);
+    }
+    h1 span { color: var(--ink); }
+    .drop-zone {
+      border: 2px dashed var(--border);
+      border-radius: 6px;
+      padding: 40px;
+      text-align: center;
+      cursor: pointer;
+      color: var(--ink-dim);
+      margin-bottom: 20px;
+      transition: border-color 0.12s, color 0.12s;
+    }
+    .drop-zone:hover, .drop-zone.drag-over {
+      border-color: var(--accent);
+      color: var(--ink);
+    }
+    .drop-zone.has-file {
+      border-style: solid;
+      border-color: var(--border);
+      padding: 14px 24px;
+      text-align: left;
+    }
+    .drop-zone .hint { font-size: 0.8rem; margin-top: 6px; }
+    input[type="file"] { display: none; }
+    .info-bar {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 10px 14px;
+      font-size: 0.82rem;
+      color: var(--ink-dim);
+      margin-bottom: 16px;
+      display: none;
+    }
+    .info-bar.visible { display: block; }
+    .controls {
+      display: flex;
+      gap: 20px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+    .field {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.82rem;
+      color: var(--ink-dim);
+    }
+    select {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      color: var(--ink);
+      padding: 5px 8px;
+      border-radius: 4px;
+      font-size: 0.82rem;
+    }
+    .output-wrap { position: relative; }
+    textarea {
+      width: 100%;
+      height: 460px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      color: var(--ink);
+      font-family: "SF Mono", "Fira Mono", monospace;
+      font-size: 0.78rem;
+      line-height: 1.65;
+      padding: 16px;
+      border-radius: 6px;
+      resize: vertical;
+    }
+    textarea::placeholder { color: var(--ink-dim); }
+    .copy-btn {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      color: var(--ink-dim);
+      padding: 4px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.78rem;
+    }
+    .copy-btn:hover { border-color: var(--accent); color: var(--ink); }
+  </style>
+</head>
+<body>
+  <h1>MIDI <span>→ Tidal Pattern</span></h1>
+
+  <div class="drop-zone" id="drop-zone">
+    Drop a MIDI file here
+    <div class="hint">or click to browse</div>
+  </div>
+  <input type="file" id="file-input" accept=".mid,.midi">
+
+  <div class="info-bar" id="info-bar"></div>
+
+  <div class="controls">
+    <label class="field">
+      Quantize
+      <select id="quant-select">
+        <option value="4">Quarter notes (4/bar)</option>
+        <option value="8">8th notes (8/bar)</option>
+        <option value="16" selected>16th notes (16/bar)</option>
+        <option value="32">32nd notes (32/bar)</option>
+      </select>
+    </label>
+    <label class="field">
+      Accidentals
+      <select id="accidental-select">
+        <option value="sharp" selected>Sharps (cs, ds…)</option>
+        <option value="flat">Flats (db, eb…)</option>
+      </select>
+    </label>
+  </div>
+
+  <div class="output-wrap">
+    <textarea id="output" readonly placeholder="Tidal pattern will appear here after loading a MIDI file…"></textarea>
+    <button class="copy-btn" id="copy-btn">Copy</button>
+  </div>
+
+  <script>
+    // ── Note naming ────────────────────────────────────────────────────────────
+
+    const SHARP_NAMES = ['c','cs','d','ds','e','f','fs','g','gs','a','as','b'];
+    const FLAT_NAMES  = ['c','db','d','eb','e','f','gb','g','ab','a','bb','b'];
+
+    function noteName(midi, useFlats) {
+      const names = useFlats ? FLAT_NAMES : SHARP_NAMES;
+      return names[midi % 12] + (Math.floor(midi / 12) - 1);
+    }
+
+    // General MIDI drum map (channel 9)
+    const GM_DRUMS = {
+      35:'bd', 36:'bd', 38:'sd', 40:'sd', 37:'sd',
+      39:'cp', 42:'hh', 44:'hh', 46:'oh',
+      49:'crash', 51:'ride', 52:'crash', 53:'ride',
+      55:'crash', 57:'crash', 59:'ride',
+      41:'lt', 43:'mt', 45:'mt', 47:'ht', 48:'ht', 50:'ht'
+    };
+    function drumName(pitch) { return GM_DRUMS[pitch] || `n${pitch}`; }
+
+    // ── MIDI parser ────────────────────────────────────────────────────────────
+
+    function parseMidi(buf) {
+      const b = new Uint8Array(buf);
+      let p = 0;
+
+      function ru32() {
+        const v = ((b[p]<<24)|(b[p+1]<<16)|(b[p+2]<<8)|b[p+3]) >>> 0;
+        p += 4; return v;
+      }
+      function ru16() { const v = (b[p]<<8)|b[p+1]; p += 2; return v; }
+      function ru8()  { return b[p++]; }
+      function rvlq() {
+        let v = 0, c;
+        do { c = ru8(); v = (v << 7) | (c & 0x7f); } while (c & 0x80);
+        return v;
+      }
+      function rstr(n) {
+        let s = '';
+        for (let i = 0; i < n; i++) s += String.fromCharCode(b[p++]);
+        return s;
+      }
+
+      const tag = rstr(4);
+      if (tag !== 'MThd') throw new Error('Not a valid MIDI file (missing MThd)');
+
+      const headerLen = ru32();
+      const format    = ru16();
+      const numTracks = ru16();
+      const ppqRaw    = ru16();
+
+      if (ppqRaw & 0x8000) throw new Error('SMPTE timecode division not supported — use PPQ-based MIDI');
+
+      const ppq = ppqRaw;
+      p = 8 + headerLen; // reposition past header chunk
+
+      const tracks = [];
+
+      for (let t = 0; t < numTracks && p < b.length; t++) {
+        if (p + 8 > b.length) break;
+        const chunkTag = rstr(4);
+        const chunkLen = ru32();
+        const chunkEnd = p + chunkLen;
+
+        if (chunkTag !== 'MTrk') { p = chunkEnd; continue; }
+
+        let tick = 0, rs = 0;
+        const open = new Map();   // "ch:pitch" → {tick, vel}
+        const notes = [];
+        let name = null;
+
+        while (p < chunkEnd) {
+          tick += rvlq();
+
+          // Meta events
+          if (b[p] === 0xFF) {
+            p++;
+            const mtype = ru8();
+            const mlen  = rvlq();
+            if (mtype === 0x03) {         // track name
+              name = rstr(mlen);
+            } else if (mtype === 0x2F) {  // end of track
+              break;
+            } else {
+              p += mlen;
+            }
+            continue;
+          }
+
+          // SysEx
+          if (b[p] === 0xF0 || b[p] === 0xF7) {
+            p++;
+            const slen = rvlq();
+            p += slen;
+            continue;
+          }
+
+          // Running status
+          if (b[p] & 0x80) { rs = b[p]; p++; }
+          const st   = rs;
+          const type = st & 0xF0;
+          const ch   = st & 0x0F;
+
+          if (type === 0x90) {
+            const pitch = ru8(), vel = ru8();
+            if (vel > 0) {
+              open.set(`${ch}:${pitch}`, { tick, vel });
+            } else {
+              const o = open.get(`${ch}:${pitch}`);
+              if (o) { notes.push({ pitch, ch, start: o.tick, end: tick, vel: o.vel }); open.delete(`${ch}:${pitch}`); }
+            }
+          } else if (type === 0x80) {
+            const pitch = ru8(); ru8();
+            const o = open.get(`${ch}:${pitch}`);
+            if (o) { notes.push({ pitch, ch, start: o.tick, end: tick, vel: o.vel }); open.delete(`${ch}:${pitch}`); }
+          } else if (type === 0xA0 || type === 0xB0 || type === 0xE0) { ru8(); ru8(); }
+          else if (type === 0xC0 || type === 0xD0) { ru8(); }
+        }
+
+        // Close any notes still open at end of track
+        for (const [key, o] of open) {
+          const [ch, pitch] = key.split(':').map(Number);
+          notes.push({ pitch, ch, start: o.tick, end: tick, vel: o.vel });
+        }
+
+        p = chunkEnd;
+        if (notes.length > 0) tracks.push({ name, notes });
+      }
+
+      return { format, ppq, numTracks, tracks };
+    }
+
+    // ── Tidal converter ────────────────────────────────────────────────────────
+
+    function convertToTidal(parsed, quantDivisions, useFlats) {
+      const { ppq, tracks } = parsed;
+      const ticksPerBar  = ppq * 4;   // assumes 4/4
+      const ticksPerSlot = ticksPerBar / quantDivisions;
+
+      const allNotes = tracks.flatMap(t => t.notes);
+      if (!allNotes.length) return '-- No note events found in this MIDI file.';
+
+      const maxTick  = Math.max(...allNotes.map(n => n.end));
+      const totalBars = Math.max(1, Math.ceil(maxTick / ticksPerBar));
+
+      // Quantize each note to its nearest slot index (global)
+      const qNotes = allNotes.map(n => ({
+        ...n,
+        slot: Math.round(n.start / ticksPerSlot)
+      }));
+
+      // Deduplicate: same channel + pitch + slot → keep one
+      const seen = new Set();
+      const notes = qNotes.filter(n => {
+        const k = `${n.ch}:${n.pitch}:${n.slot}`;
+        if (seen.has(k)) return false;
+        seen.add(k); return true;
+      });
+
+      const channels = [...new Set(notes.map(n => n.ch))].sort((a, b) => a - b);
+
+      // Build voice lines for one bar on one channel.
+      // Returns array of strings ready for n"..." or s"..." wrapping.
+      function buildVoices(chNotes, barIndex, isDrum) {
+        const lo = barIndex * quantDivisions;
+        const hi = lo + quantDivisions;
+        const inBar = chNotes.filter(n => n.slot >= lo && n.slot < hi);
+        if (!inBar.length) return [];
+
+        const bySlot = new Map();
+        for (const n of inBar) {
+          const ls = n.slot - lo;
+          if (!bySlot.has(ls)) bySlot.set(ls, []);
+          bySlot.get(ls).push(n);
+        }
+
+        if (isDrum) {
+          // One voice per unique drum sound
+          const drumVoices = new Map();
+          for (const [ls, ns] of bySlot) {
+            for (const n of ns) {
+              const dn = drumName(n.pitch);
+              if (!drumVoices.has(dn)) drumVoices.set(dn, new Set());
+              drumVoices.get(dn).add(ls);
+            }
+          }
+          return [...drumVoices.entries()].map(([, slots]) => {
+            const row = Array(quantDivisions).fill('~');
+            for (const s of slots) row[s] = drumName([...bySlot.entries()].find(([ls]) => ls === s)?.[1]?.[0]?.pitch ?? 36);
+            return row.join(' ');
+          });
+        } else {
+          // Split simultaneous notes into separate voice rows (lowest pitch first)
+          const maxV = Math.max(...[...bySlot.values()].map(ns => ns.length));
+          const voices = Array.from({ length: maxV }, () => Array(quantDivisions).fill('~'));
+          for (const [ls, ns] of bySlot) {
+            [...ns].sort((a, b) => a.pitch - b.pitch).forEach((n, vi) => {
+              voices[vi][ls] = noteName(n.pitch, useFlats);
+            });
+          }
+          return voices.map(v => v.join(' '));
+        }
+      }
+
+      // ── Fix for drum voice content bug above ──────────────────────────────
+      // Rebuild drum voices cleanly
+      function buildDrumVoices(chNotes, barIndex) {
+        const lo = barIndex * quantDivisions;
+        const hi = lo + quantDivisions;
+        const inBar = chNotes.filter(n => n.slot >= lo && n.slot < hi);
+        if (!inBar.length) return [];
+
+        const drumVoices = new Map(); // drumName → slot set
+        for (const n of inBar) {
+          const ls = n.slot - lo;
+          const dn = drumName(n.pitch);
+          if (!drumVoices.has(dn)) drumVoices.set(dn, new Set());
+          drumVoices.get(dn).add(ls);
+        }
+
+        return [...drumVoices.entries()].map(([dn, slots]) => {
+          const row = Array(quantDivisions).fill('~');
+          for (const s of slots) row[s] = dn;
+          return row.join(' ');
+        });
+      }
+
+      // ── Assemble per-bar blocks ────────────────────────────────────────────
+      const barBlocks = [];
+
+      for (let bar = 0; bar < totalBars; bar++) {
+        const voiceLines = [];
+
+        for (const ch of channels) {
+          const chNotes = notes.filter(n => n.ch === ch);
+          const isDrum  = ch === 9;
+
+          if (isDrum) {
+            const voices = buildDrumVoices(chNotes, bar);
+            for (const v of voices) voiceLines.push(`s "${v}"`);
+          } else {
+            const voices = buildVoices(chNotes, bar, false, useFlats);
+            for (const v of voices) voiceLines.push(`n "${v}" # s "ch${ch}"`);
+          }
+        }
+
+        if (voiceLines.length === 0) {
+          // Silent bar — emit a rest so seqP step count is preserved
+          barBlocks.push(`s "~"`);
+        } else if (voiceLines.length === 1) {
+          barBlocks.push(voiceLines[0]);
+        } else {
+          barBlocks.push(`stack [\n      ${voiceLines.join(',\n      ')}\n    ]`);
+        }
+      }
+
+      // ── Format output ──────────────────────────────────────────────────────
+      const chDesc = channels.map(c => c === 9 ? 'ch9 (drums)' : `ch${c}`).join(', ');
+      const lines = [
+        `-- ${totalBars} bar${totalBars !== 1 ? 's' : ''} · ${quantDivisions} slots/bar · ${chDesc}`,
+        `-- Assumes 4/4 time. Rename "ch0", "ch1", etc. to match your instruments.`,
+        '',
+        'track imported {',
+        '  seqP [',
+      ];
+
+      barBlocks.forEach((block, i) => {
+        const comma = i < barBlocks.length - 1 ? ',' : '';
+        const indented = block.split('\n').map(l => '    ' + l).join('\n');
+        lines.push(indented + comma);
+      });
+
+      lines.push('  ]');
+      lines.push('}');
+
+      return lines.join('\n');
+    }
+
+    // ── UI ─────────────────────────────────────────────────────────────────────
+
+    const dropZone       = document.getElementById('drop-zone');
+    const fileInput      = document.getElementById('file-input');
+    const infoBar        = document.getElementById('info-bar');
+    const quantSelect    = document.getElementById('quant-select');
+    const accidentalSel  = document.getElementById('accidental-select');
+    const outputEl       = document.getElementById('output');
+    const copyBtn        = document.getElementById('copy-btn');
+
+    let parsedMidi = null;
+
+    function handleFile(file) {
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = e => {
+        try {
+          parsedMidi = parseMidi(e.target.result);
+
+          const allNotes = parsedMidi.tracks.flatMap(t => t.notes);
+          const channels = [...new Set(allNotes.map(n => n.ch))].sort((a, b) => a - b);
+          const maxTick  = allNotes.length ? Math.max(...allNotes.map(n => n.end)) : 0;
+          const bars     = Math.ceil(maxTick / (parsedMidi.ppq * 4)) || 0;
+          const trackNames = parsedMidi.tracks.map(t => t.name).filter(Boolean);
+
+          dropZone.classList.add('has-file');
+          dropZone.innerHTML = `<strong>${file.name}</strong>`;
+
+          const parts = [
+            `Format ${parsedMidi.format}`,
+            `PPQ ${parsedMidi.ppq}`,
+            `${parsedMidi.tracks.length} note track${parsedMidi.tracks.length !== 1 ? 's' : ''}`,
+            `${channels.length} channel${channels.length !== 1 ? 's' : ''} (${channels.map(c => c === 9 ? '9/drums' : c).join(', ')})`,
+            `~${bars} bar${bars !== 1 ? 's' : ''}`,
+          ];
+          if (trackNames.length) parts.push(`named: ${trackNames.join(', ')}`);
+
+          infoBar.textContent = parts.join(' · ');
+          infoBar.classList.add('visible');
+
+          regenerate();
+        } catch (err) {
+          infoBar.textContent = `Parse error: ${err.message}`;
+          infoBar.classList.add('visible');
+          outputEl.value = '';
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    function regenerate() {
+      if (!parsedMidi) return;
+      const quant    = parseInt(quantSelect.value, 10);
+      const useFlats = accidentalSel.value === 'flat';
+      try {
+        outputEl.value = convertToTidal(parsedMidi, quant, useFlats);
+      } catch (err) {
+        outputEl.value = `-- Error: ${err.message}`;
+      }
+    }
+
+    dropZone.addEventListener('click', () => fileInput.click());
+    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+    dropZone.addEventListener('drop', e => {
+      e.preventDefault();
+      dropZone.classList.remove('drag-over');
+      handleFile(e.dataTransfer.files[0]);
+    });
+
+    fileInput.addEventListener('change', e => handleFile(e.target.files[0]));
+    quantSelect.addEventListener('change', regenerate);
+    accidentalSel.addEventListener('change', regenerate);
+
+    copyBtn.addEventListener('click', () => {
+      if (!outputEl.value) return;
+      navigator.clipboard.writeText(outputEl.value).then(() => {
+        copyBtn.textContent = 'Copied!';
+        setTimeout(() => copyBtn.textContent = 'Copy', 1500);
+      });
+    });
+  </script>
+</body>
+</html>
