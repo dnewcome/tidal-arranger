@@ -1378,30 +1378,20 @@ void main() { gl_FragColor = v_color; }`;
         ];
       }
 
-      const tracks = currentArrangement.tracks;
-      const numTracks = tracks.length + 1; // +1 for tempo track
-
-      const headerChunk = buildChunk('MThd', [
-        0x00, 0x01,                           // format 1
-        (numTracks >> 8) & 0xFF, numTracks & 0xFF,
-        (PPQ >> 8) & 0xFF, PPQ & 0xFF
-      ]);
-
-      const tempoChunk = buildChunk('MTrk', [
-        0x00, 0xFF, 0x51, 0x03,               // delta 0, tempo meta
-        (microsecondsPerBeat >> 16) & 0xFF,
-        (microsecondsPerBeat >> 8) & 0xFF,
-        microsecondsPerBeat & 0xFF,
-        0x00, 0xFF, 0x2F, 0x00                // end of track
-      ]);
-
-      const trackChunks = tracks.map(track => {
+      // Build one MTrk chunk for a track, sliced to [stepOffset, stepOffset+stepCount).
+      // Event times are normalized so the slice starts at tick 0.
+      function buildTrackChunk(track, stepOffset, stepCount) {
+        const endStep = stepOffset + stepCount;
         const midiEvents = [];
         for (const event of track.events) {
-          const startTick = Math.round(event.start * TICKS_PER_STEP);
+          if (event.start < stepOffset || event.start >= endStep) continue;
+          const startTick = Math.round((event.start - stepOffset) * TICKS_PER_STEP);
           const ch = event.channel;
           if (event.type === 'note') {
-            const endTick = Math.round((event.start + event.duration) * TICKS_PER_STEP);
+            const endTick = Math.min(
+              Math.round((event.start + event.duration - stepOffset) * TICKS_PER_STEP),
+              stepCount * TICKS_PER_STEP
+            );
             midiEvents.push({ tick: startTick, msg: [0x90 | ch, event.pitch, event.velocity] });
             midiEvents.push({ tick: endTick,   msg: [0x80 | ch, event.pitch, 0] });
           } else if (event.type === 'cc') {
@@ -1411,26 +1401,69 @@ void main() { gl_FragColor = v_color; }`;
         midiEvents.sort((a, b) => a.tick - b.tick || a.msg[0] - b.msg[0]);
 
         const trackData = [];
+        const nameBytes = Array.from(track.name).map(c => c.charCodeAt(0));
+        trackData.push(0x00, 0xFF, 0x03, ...vlq(nameBytes.length), ...nameBytes);
         let prevTick = 0;
         for (const ev of midiEvents) {
           const delta = ev.tick - prevTick;
           prevTick = ev.tick;
           trackData.push(...vlq(delta), ...ev.msg);
         }
-        trackData.push(0x00, 0xFF, 0x2F, 0x00); // end of track
-
+        trackData.push(0x00, 0xFF, 0x2F, 0x00);
         return buildChunk('MTrk', trackData);
-      });
+      }
 
-      const allBytes = new Uint8Array([...headerChunk, ...tempoChunk, ...trackChunks.flat()]);
-      const blob = new Blob([allBytes], { type: 'audio/midi' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'arrangement.mid';
-      a.click();
-      URL.revokeObjectURL(url);
-      status.textContent = `Exported ${tracks.length} track(s) as arrangement.mid`;
+      function buildMidiBytes(tracks, stepOffset, stepCount) {
+        const numTracks = tracks.length + 1;
+        const headerChunk = buildChunk('MThd', [
+          0x00, 0x01,
+          (numTracks >> 8) & 0xFF, numTracks & 0xFF,
+          (PPQ >> 8) & 0xFF, PPQ & 0xFF
+        ]);
+        const tempoChunk = buildChunk('MTrk', [
+          0x00, 0xFF, 0x51, 0x03,
+          (microsecondsPerBeat >> 16) & 0xFF,
+          (microsecondsPerBeat >> 8) & 0xFF,
+          microsecondsPerBeat & 0xFF,
+          0x00, 0xFF, 0x2F, 0x00
+        ]);
+        const trackChunks = tracks.map(t => buildTrackChunk(t, stepOffset, stepCount));
+        return new Uint8Array([...headerChunk, ...tempoChunk, ...trackChunks.flat()]);
+      }
+
+      function downloadMidi(bytes, filename) {
+        const blob = new Blob([bytes], { type: 'audio/midi' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+
+      const tracks = currentArrangement.tracks;
+      const sectionBlocks = currentArrangement.sectionBlocks;
+
+      if (sectionBlocks && sectionBlocks.length > 0) {
+        // One file per unique section name, using the first occurrence for timing
+        const seen = new Set();
+        const uniqueSections = [];
+        for (const block of sectionBlocks) {
+          if (!seen.has(block.name)) {
+            seen.add(block.name);
+            uniqueSections.push(block);
+          }
+        }
+        uniqueSections.forEach((block, i) => {
+          setTimeout(() => {
+            downloadMidi(buildMidiBytes(tracks, block.start, block.duration), `${block.name}.mid`);
+          }, i * 150);
+        });
+        status.textContent = `Exported ${uniqueSections.length} section clips: ${uniqueSections.map(b => b.name + ".mid").join(", ")}`;
+      } else {
+        downloadMidi(buildMidiBytes(tracks, 0, currentArrangement.totalLength), 'arrangement.mid');
+        status.textContent = `Exported ${tracks.length} track(s) as arrangement.mid`;
+      }
     }
 
     rollFrame.addEventListener("scroll", () => {
