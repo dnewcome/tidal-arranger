@@ -852,6 +852,49 @@ What each line tests:
 - `]!2:` — step condition: the entire second `seqP` slot is silent on pass 1, active from pass 2 onward
 - `fill!3` — condition on a let binding reference: the fill sequence only replaces the third step on every 3rd pass
 
+### AOT Condition Evaluation
+
+This example demonstrates ahead-of-time condition evaluation in the arrangement view. Paste it in and press Execute — the piano roll shows a committed result with conditions already resolved.
+
+```tidal
+let pattern = stack [
+  s "bd cp bd cp",    -- always fires
+  s "crash!4",        -- every 4th pass → segments 4 and 8 only
+  s "oh!>2",          -- after pass 2 → absent in segments 1–2, present in 3–8
+  s "hh?50*4"         -- 4 hi-hats, each 50% — re-rolled every Execute
+]
+
+track drums {
+  seqP [ pattern.8 ]
+}
+```
+
+What to look for in the piano roll:
+
+- Segments 1–2: kick and snare only, no open hat, no crash
+- Segment 3: open hat appears for the first time
+- Segment 4: open hat and crash together
+- Segments 5–7: open hat only
+- Segment 8: open hat and crash again
+- Hi-hats: different notes present or absent across segments; the whole distribution changes each time you press Execute
+
+### Reset-Per-Phrase
+
+Pass counts reset at each `.N` boundary so inner recurrences are self-contained. This example shows the difference between global accumulation (which this project does *not* do) and reset-per-phrase (which it does).
+
+```tidal
+let phrase = stack [
+  s "bd cp bd cp",
+  s "crash!4"         -- fires on pass 4 of each phrase
+]
+
+track drums {
+  seqP [ (phrase.4).3 ]   -- 3 outer repetitions of a 4-step phrase
+}
+```
+
+Crash appears at segments 4, 8, and 12 — the 4th step of each outer phrase repetition. If pass counts accumulated globally, crash would only appear once at segment 4. Reset-per-phrase means each outer repetition runs its own local passes 1–4 independently.
+
 ### Comments
 
 ```tidal
