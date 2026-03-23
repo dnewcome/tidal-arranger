@@ -151,6 +151,7 @@
       left: 0;
     }
 
+    #roll-text,
     #roll-highlight {
       pointer-events: none;
     }
@@ -480,6 +481,7 @@
           <div class="roll-frame">
             <div class="canvas-stack">
               <canvas id="roll-base"></canvas>
+              <canvas id="roll-text"></canvas>
               <canvas id="roll-highlight"></canvas>
             </div>
           </div>
@@ -549,10 +551,170 @@ track resonance {
 
     const rollFrame = document.querySelector(".roll-frame");
     const baseCanvas = document.getElementById("roll-base");
+    const txtCanvas = document.getElementById("roll-text");
     const hlCanvas = document.getElementById("roll-highlight");
-    const baseCtx = baseCanvas.getContext("2d");
+    const txtCtx = txtCanvas.getContext("2d");
     const hlCtx = hlCanvas.getContext("2d");
     const eventRects = new Map(); // event.id → {x, y, w, h, fill}
+
+    // ── WebGL init ────────────────────────────────────────────────────────────
+    function hexToRgb(hex) {
+      const n = parseInt(hex.slice(1), 16);
+      return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255];
+    }
+
+    function initWebGL(canvas) {
+      let gl = canvas.getContext("webgl2");
+      const isGL2 = !!gl;
+      let instExt = null;
+      if (!gl) {
+        gl = canvas.getContext("webgl");
+        if (!gl) return null;
+        instExt = gl.getExtension("ANGLE_instanced_arrays");
+        if (!instExt) return null;
+      }
+
+      const vsSrc = isGL2 ? `#version 300 es
+in vec2 a_corner;
+in vec4 a_rect;
+in vec4 a_color;
+uniform vec2 u_res;
+out vec4 v_color;
+void main() {
+  vec2 pos = a_rect.xy + a_corner * a_rect.zw;
+  vec2 clip = pos / u_res * 2.0 - 1.0;
+  gl_Position = vec4(clip.x, -clip.y, 0.0, 1.0);
+  v_color = a_color;
+}` : `
+attribute vec2 a_corner;
+attribute vec4 a_rect;
+attribute vec4 a_color;
+uniform vec2 u_res;
+varying vec4 v_color;
+void main() {
+  vec2 pos = a_rect.xy + a_corner * a_rect.zw;
+  vec2 clip = pos / u_res * 2.0 - 1.0;
+  gl_Position = vec4(clip.x, -clip.y, 0.0, 1.0);
+  v_color = a_color;
+}`;
+
+      const fsSrc = isGL2 ? `#version 300 es
+precision mediump float;
+in vec4 v_color;
+out vec4 fragColor;
+void main() { fragColor = v_color; }` : `
+precision mediump float;
+varying vec4 v_color;
+void main() { gl_FragColor = v_color; }`;
+
+      function compileShader(type, src) {
+        const sh = gl.createShader(type);
+        gl.shaderSource(sh, src);
+        gl.compileShader(sh);
+        if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+          console.error("Shader error:", gl.getShaderInfoLog(sh));
+          gl.deleteShader(sh);
+          return null;
+        }
+        return sh;
+      }
+
+      const vs = compileShader(gl.VERTEX_SHADER, vsSrc);
+      const fs = compileShader(gl.FRAGMENT_SHADER, fsSrc);
+      if (!vs || !fs) return null;
+
+      const program = gl.createProgram();
+      gl.attachShader(program, vs);
+      gl.attachShader(program, fs);
+      gl.linkProgram(program);
+      if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+        console.error("Link error:", gl.getProgramInfoLog(program));
+        return null;
+      }
+
+      // Template quad: 6 vertices (2 triangles) covering [0,0]->[1,1]
+      const corners = new Float32Array([
+        0, 0,  1, 0,  1, 1,
+        0, 0,  1, 1,  0, 1
+      ]);
+      const cornerBuf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, cornerBuf);
+      gl.bufferData(gl.ARRAY_BUFFER, corners, gl.STATIC_DRAW);
+
+      const instanceBuf = gl.createBuffer();
+
+      // Attribute locations
+      const aCorner = gl.getAttribLocation(program, "a_corner");
+      const aRect   = gl.getAttribLocation(program, "a_rect");
+      const aColor  = gl.getAttribLocation(program, "a_color");
+      const uRes    = gl.getUniformLocation(program, "u_res");
+
+      gl.enable(gl.BLEND);
+      gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+
+      return { gl, program, cornerBuf, instanceBuf, aCorner, aRect, aColor, uRes, isGL2, instExt };
+    }
+
+    const glState = initWebGL(baseCanvas);
+
+    function glDrawRects(instances) {
+      if (!glState || instances.length === 0) return;
+      const { gl, program, cornerBuf, instanceBuf, aCorner, aRect, aColor, uRes, isGL2, instExt } = glState;
+      const FLOATS_PER_INSTANCE = 8;
+      const count = instances.length / FLOATS_PER_INSTANCE;
+
+      gl.useProgram(program);
+      gl.uniform2f(uRes, gl.drawingBufferWidth, gl.drawingBufferHeight);
+
+      // Corner buffer (per-vertex, divisor 0)
+      gl.bindBuffer(gl.ARRAY_BUFFER, cornerBuf);
+      gl.enableVertexAttribArray(aCorner);
+      gl.vertexAttribPointer(aCorner, 2, gl.FLOAT, false, 0, 0);
+      if (isGL2) {
+        gl.vertexAttribDivisor(aCorner, 0);
+      } else {
+        instExt.vertexAttribDivisorANGLE(aCorner, 0);
+      }
+
+      // Instance buffer (per-instance, divisor 1)
+      gl.bindBuffer(gl.ARRAY_BUFFER, instanceBuf);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(instances), gl.DYNAMIC_DRAW);
+
+      const BYTES = Float32Array.BYTES_PER_ELEMENT;
+      const STRIDE = FLOATS_PER_INSTANCE * BYTES;
+
+      gl.enableVertexAttribArray(aRect);
+      gl.vertexAttribPointer(aRect, 4, gl.FLOAT, false, STRIDE, 0);
+      gl.enableVertexAttribArray(aColor);
+      gl.vertexAttribPointer(aColor, 4, gl.FLOAT, false, STRIDE, 4 * BYTES);
+
+      if (isGL2) {
+        gl.vertexAttribDivisor(aRect, 1);
+        gl.vertexAttribDivisor(aColor, 1);
+        gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, count);
+      } else {
+        instExt.vertexAttribDivisorANGLE(aRect, 1);
+        instExt.vertexAttribDivisorANGLE(aColor, 1);
+        instExt.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 6, count);
+      }
+    }
+
+    // Helper: push a rect into instances array
+    function pushRect(instances, x, y, w, h, r, g, b, a) {
+      instances.push(x, y, w, h, r, g, b, a);
+    }
+
+    // Helper: parse CSS rgba string to [r,g,b,a] in 0..1
+    function parseRgba(css) {
+      const m = css.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/);
+      if (m) return [+m[1]/255, +m[2]/255, +m[3]/255, m[4] !== undefined ? +m[4] : 1];
+      if (css.startsWith("#")) {
+        const rgb = hexToRgb(css);
+        return [rgb[0], rgb[1], rgb[2], 1];
+      }
+      return [1, 1, 1, 1];
+    }
+    // ── End WebGL init ────────────────────────────────────────────────────────
 
     const legend = document.getElementById("legend");
     const input = document.getElementById("pattern-input");
@@ -765,12 +927,14 @@ track resonance {
     }
 
     function renderArrangement(arrangement) {
-      const W = Math.max(200, rollFrame.clientWidth * zoomX);
+      const W = Math.min(32000, Math.max(200, rollFrame.clientWidth * zoomX));
       const H = Math.max(200, rollFrame.clientHeight);
-      baseCanvas.width = hlCanvas.width = W;
-      baseCanvas.height = hlCanvas.height = H;
-      baseCanvas.style.width = hlCanvas.style.width = W + "px";
-      baseCanvas.style.height = hlCanvas.style.height = H + "px";
+
+      // Resize all three canvases
+      baseCanvas.width  = txtCanvas.width  = hlCanvas.width  = W;
+      baseCanvas.height = txtCanvas.height = hlCanvas.height = H;
+      baseCanvas.style.width  = txtCanvas.style.width  = hlCanvas.style.width  = W + "px";
+      baseCanvas.style.height = txtCanvas.style.height = hlCanvas.style.height = H + "px";
 
       const left = 88, right = 16, top = 28, bottom = 8;
       const IW = W - left - right;
@@ -783,27 +947,25 @@ track resonance {
 
       eventRects.clear();
 
-      // Background
-      baseCtx.fillStyle = "#0b0e15";
-      baseCtx.fillRect(0, 0, W, H);
+      // ── WebGL geometry batch ─────────────────────────────────────────────
+      const instances = [];
 
-      // Step/bar grid lines
-      for (let tick = 0; tick <= totalLength * 4; tick++) {
-        const x = left + IW * tick / (totalLength * 4);
+      // 1. Background
+      pushRect(instances, 0, 0, W, H, 0x0b/255, 0x0e/255, 0x15/255, 1);
+
+      // 5. Vertical grid lines (step/bar)
+      const totalTicks = totalLength * 4;
+      const minStepPx = 3; // skip step lines if too dense
+      const stepPx = IW / totalTicks;
+      for (let tick = 0; tick <= totalTicks; tick++) {
+        const x = left + IW * tick / totalTicks;
         const isBar = tick % 4 === 0;
-        baseCtx.strokeStyle = isBar ? "rgba(255,255,255,0.1)" : "rgba(255,255,255,0.035)";
-        baseCtx.lineWidth = isBar ? 1.2 : 0.7;
-        baseCtx.setLineDash([]);
-        baseCtx.beginPath();
-        baseCtx.moveTo(x, top);
-        baseCtx.lineTo(x, H - bottom);
-        baseCtx.stroke();
-        if (isBar && tick < totalLength * 4) {
-          baseCtx.font = '10px "IBM Plex Mono", monospace';
-          baseCtx.fillStyle = "#3a4a6a";
-          baseCtx.textAlign = "left";
-          baseCtx.fillText(String(tick / 4), x + 3, 18);
-        }
+        if (!isBar && stepPx < minStepPx) continue;
+        const lw = isBar ? 1.5 : 1;
+        const [r, g, b, a] = isBar
+          ? [1, 1, 1, 0.1]
+          : [1, 1, 1, 0.035];
+        pushRect(instances, x, top, lw, H - top - bottom, r, g, b, a);
       }
 
       arrangement.tracks.forEach((track, trackIndex) => {
@@ -811,20 +973,8 @@ track resonance {
         const laneH = trackH - 6;
         const isCc = track.events.length > 0 && track.events.every((e) => e.type === "cc");
 
-        // Track separator line
-        baseCtx.strokeStyle = "rgba(255,255,255,0.06)";
-        baseCtx.lineWidth = 1;
-        baseCtx.setLineDash([]);
-        baseCtx.beginPath();
-        baseCtx.moveTo(0, trackTop);
-        baseCtx.lineTo(W, trackTop);
-        baseCtx.stroke();
-
-        // Track name
-        baseCtx.font = 'bold 12px "Space Grotesk", sans-serif';
-        baseCtx.fillStyle = "#edf2ff";
-        baseCtx.textAlign = "left";
-        baseCtx.fillText(track.name, 6, trackTop + 16);
+        // 2. Track separator line
+        pushRect(instances, 0, trackTop, W, 1, 1, 1, 1, 0.06);
 
         if (!isCc) {
           const noteZoneH = Math.floor(laneH * 0.76);
@@ -836,110 +986,51 @@ track resonance {
           const pitchCount = range.max - range.min + 1;
           const rowH = noteZoneH / pitchCount;
 
-          // Piano key rows
+          // 3. Piano key black-note row tints + 4. C-note lines
           for (let pitch = range.min; pitch <= range.max; pitch++) {
             const row = range.max - pitch;
             const y = trackTop + row * rowH;
             const isBlack = [1, 3, 6, 8, 10].includes(pitch % 12);
             if (isBlack) {
-              baseCtx.fillStyle = "rgba(20,20,30,0.55)";
-              baseCtx.fillRect(left, y, IW, rowH);
+              pushRect(instances, left, y, IW, rowH, 20/255, 20/255, 30/255, 0.55);
             }
             if (pitch % 12 === 0) {
-              baseCtx.strokeStyle = "rgba(255,255,255,0.07)";
-              baseCtx.lineWidth = 1;
-              baseCtx.setLineDash([]);
-              baseCtx.beginPath();
-              baseCtx.moveTo(left, y);
-              baseCtx.lineTo(W - right, y);
-              baseCtx.stroke();
+              pushRect(instances, left, y, IW, 1, 1, 1, 1, 0.07);
             }
           }
 
-          // Pitch labels
-          if (rowH >= 6) {
-            baseCtx.textAlign = "right";
-            baseCtx.font = '9px "IBM Plex Mono", monospace';
-            baseCtx.fillStyle = "#3a4a6a";
-            baseCtx.fillText(noteName(range.max), left - 4, trackTop + 10);
-            baseCtx.fillText(noteName(range.min), left - 4, trackTop + noteZoneH - 2);
-            baseCtx.textAlign = "left";
-          }
-
-          // Segment boundaries + labels
+          // Segment boundary lines (solid, low alpha instead of dashed)
           track.segments.forEach((segment) => {
             const segX = left + (segment.start / totalLength) * IW;
-            baseCtx.strokeStyle = "rgba(255,255,255,0.08)";
-            baseCtx.lineWidth = 1;
-            baseCtx.setLineDash([4, 4]);
-            baseCtx.beginPath();
-            baseCtx.moveTo(segX, trackTop);
-            baseCtx.lineTo(segX, trackTop + laneH);
-            baseCtx.stroke();
-            baseCtx.setLineDash([]);
-            if (trackH > 40 && segment.name) {
-              baseCtx.font = '9px "IBM Plex Mono", monospace';
-              baseCtx.fillStyle = "rgba(80,110,180,0.75)";
-              baseCtx.fillText(segment.name, segX + 4, trackTop + 10);
-            }
+            pushRect(instances, segX, trackTop, 1, laneH, 1, 1, 1, 0.08);
           });
 
-          // Note rectangles
+          // 8. Note rectangles (alpha 0.84)
           noteEvents.forEach((ev) => {
             const x = left + (ev.start / totalLength) * IW;
             const w = Math.max(3, ev.duration / totalLength * IW - 1);
             const y = trackTop + (range.max - ev.pitch) * rowH + 1;
             const h = Math.max(3, rowH - 2);
             const fill = colorMap.get(ev.instrument) || "#7ae582";
+            const [r, g, b] = hexToRgb(fill);
 
             eventRects.set(ev.id, { x, y, w, h, fill });
-
-            // Filled rect
-            baseCtx.globalAlpha = 0.84;
-            baseCtx.fillStyle = fill;
-            baseCtx.beginPath();
-            baseCtx.roundRect(x, y, w, h, 3);
-            baseCtx.fill();
-
-            // Stroke
-            baseCtx.globalAlpha = 1;
-            baseCtx.strokeStyle = "rgba(0,0,0,0.28)";
-            baseCtx.lineWidth = 0.8;
-            baseCtx.setLineDash([]);
-            baseCtx.beginPath();
-            baseCtx.roundRect(x, y, w, h, 3);
-            baseCtx.stroke();
-
-            // Label
-            if (w > 22 && h > 9) {
-              const label = ev.instrument === ev.label ? ev.label : ev.instrument + ": " + ev.label;
-              baseCtx.font = '9px "IBM Plex Mono", monospace';
-              baseCtx.fillStyle = "rgba(255,255,255,0.82)";
-              baseCtx.textAlign = "left";
-              baseCtx.fillText(label, x + 3, y + h * 0.72);
-            }
+            pushRect(instances, x, y, w, h, r, g, b, 0.84);
           });
 
-          // Velocity lane
+          // 6. Velocity lane separator
           if (velZoneH > 5) {
-            baseCtx.globalAlpha = 1;
-            baseCtx.strokeStyle = "rgba(255,255,255,0.05)";
-            baseCtx.lineWidth = 1;
-            baseCtx.setLineDash([]);
-            baseCtx.beginPath();
-            baseCtx.moveTo(left, velZoneY);
-            baseCtx.lineTo(W - right, velZoneY);
-            baseCtx.stroke();
+            pushRect(instances, left, velZoneY, IW, 1, 1, 1, 1, 0.05);
 
+            // 7. Velocity bars
             noteEvents.forEach((ev) => {
               const x = left + (ev.start / totalLength) * IW;
               const velNorm = (ev.velocity || 100) / 127;
               const bH = Math.max(1, velNorm * velZoneH);
-              baseCtx.fillStyle = colorMap.get(ev.instrument) || "#7ae582";
-              baseCtx.globalAlpha = 0.55;
-              baseCtx.fillRect(x, velZoneY + velZoneH - bH, 2, bH);
+              const fill = colorMap.get(ev.instrument) || "#7ae582";
+              const [r, g, b] = hexToRgb(fill);
+              pushRect(instances, x, velZoneY + velZoneH - bH, 2, bH, r, g, b, 0.55);
             });
-            baseCtx.globalAlpha = 1;
           }
 
         } else {
@@ -947,21 +1038,7 @@ track resonance {
           // Guide lines at 0%, 25%, 50%, 75%, 100%
           for (const pct of [0, 0.25, 0.5, 0.75, 1.0]) {
             const y = trackTop + laneH * (1 - pct);
-            baseCtx.strokeStyle = "rgba(255,255,255,0.05)";
-            baseCtx.lineWidth = 1;
-            baseCtx.setLineDash([3, 4]);
-            baseCtx.beginPath();
-            baseCtx.moveTo(left, y);
-            baseCtx.lineTo(W - right, y);
-            baseCtx.stroke();
-            baseCtx.setLineDash([]);
-            if (trackH > 44) {
-              baseCtx.font = '9px "IBM Plex Mono", monospace';
-              baseCtx.fillStyle = "#3a4a6a";
-              baseCtx.textAlign = "right";
-              baseCtx.fillText(String(Math.round(pct * 127)), left - 4, y + 4);
-              baseCtx.textAlign = "left";
-            }
+            pushRect(instances, left, y, IW, 1, 1, 1, 1, 0.05);
           }
 
           // Group events by ccn
@@ -976,63 +1053,144 @@ track resonance {
           ccGroups.forEach((events, ccn) => {
             const sorted = [...events].sort((a, b) => a.start - b.start);
             const fill = colorMap.get("cc" + ccn) || "#7c5cff";
+            const [r, g, b] = hexToRgb(fill);
 
-            // Fill path (step function area)
-            baseCtx.globalAlpha = 0.15;
-            baseCtx.fillStyle = fill;
-            baseCtx.beginPath();
-            sorted.forEach((ev, i) => {
-              const x1 = left + (ev.start / totalLength) * IW;
-              const x2 = left + ((ev.start + ev.duration) / totalLength) * IW;
-              const y = trackTop + laneH * (1 - ev.pitch / 127);
-              if (i === 0) {
-                baseCtx.moveTo(x1, baseY);
-                baseCtx.lineTo(x1, y);
-              } else {
-                baseCtx.lineTo(x1, y);
-              }
-              baseCtx.lineTo(x2, y);
-              if (i === sorted.length - 1) {
-                baseCtx.lineTo(x2, baseY);
-                baseCtx.closePath();
-              }
-            });
-            baseCtx.fill();
-
-            // Stroke path (step function line)
-            baseCtx.globalAlpha = 1;
-            baseCtx.strokeStyle = fill;
-            baseCtx.lineWidth = 1.5;
-            baseCtx.setLineDash([]);
-            baseCtx.beginPath();
-            sorted.forEach((ev, i) => {
-              const x1 = left + (ev.start / totalLength) * IW;
-              const x2 = left + ((ev.start + ev.duration) / totalLength) * IW;
-              const y = trackTop + laneH * (1 - ev.pitch / 127);
-              if (i === 0) {
-                baseCtx.moveTo(x1, y);
-              } else {
-                baseCtx.lineTo(x1, y);
-              }
-              baseCtx.lineTo(x2, y);
-            });
-            baseCtx.stroke();
-
-            // Store rects for highlighting
+            // 9. CC fill rects (step function area, alpha 0.15)
             sorted.forEach((ev) => {
-              const x = left + (ev.start / totalLength) * IW;
-              const w = Math.max(2, ev.duration / totalLength * IW - 1);
-              const y = trackTop + laneH * (1 - ev.pitch / 127);
-              const h = Math.max(4, baseY - y);
-              eventRects.set(ev.id, { x, y, w, h, fill });
+              const x1 = left + (ev.start / totalLength) * IW;
+              const x2 = left + ((ev.start + ev.duration) / totalLength) * IW;
+              const yTop = trackTop + laneH * (1 - ev.pitch / 127);
+              const rectH = baseY - yTop;
+              if (rectH > 0 && x2 - x1 > 0) {
+                pushRect(instances, x1, yTop, x2 - x1, rectH, r, g, b, 0.15);
+              }
             });
+
+            // 10. CC line segments (2px tall rects for step-function stroke)
+            sorted.forEach((ev) => {
+              const x1 = left + (ev.start / totalLength) * IW;
+              const x2 = left + ((ev.start + ev.duration) / totalLength) * IW;
+              const y = trackTop + laneH * (1 - ev.pitch / 127);
+              // horizontal segment
+              if (x2 - x1 > 0) {
+                pushRect(instances, x1, y, x2 - x1, 2, r, g, b, 1);
+              }
+              // Store rects for highlighting
+              const w = Math.max(2, (ev.duration / totalLength) * IW - 1);
+              const h = Math.max(4, baseY - y);
+              eventRects.set(ev.id, { x: x1, y, w, h, fill });
+            });
+
+            // Vertical connectors between steps
+            for (let i = 1; i < sorted.length; i++) {
+              const prev = sorted[i - 1];
+              const curr = sorted[i];
+              const xConn = left + (curr.start / totalLength) * IW;
+              const yPrev = trackTop + laneH * (1 - prev.pitch / 127);
+              const yCurr = trackTop + laneH * (1 - curr.pitch / 127);
+              const yMin = Math.min(yPrev, yCurr);
+              const yMax = Math.max(yPrev, yCurr);
+              if (yMax - yMin > 0) {
+                pushRect(instances, xConn, yMin, 2, yMax - yMin, r, g, b, 1);
+              }
+            }
           });
         }
       });
 
-      // Reset context state
-      baseCtx.globalAlpha = 1;
-      baseCtx.setLineDash([]);
+      // ── Upload and draw all rects ────────────────────────────────────────
+      if (glState) {
+        const { gl } = glState;
+        gl.viewport(0, 0, W, H);
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        glDrawRects(instances);
+      }
+
+      // ── Text layer (Canvas 2D) ───────────────────────────────────────────
+      txtCtx.clearRect(0, 0, W, H);
+
+      // Bar number labels
+      for (let tick = 0; tick <= totalLength * 4; tick++) {
+        const isBar = tick % 4 === 0;
+        if (isBar && tick < totalLength * 4) {
+          const x = left + IW * tick / (totalLength * 4);
+          txtCtx.font = '10px "IBM Plex Mono", monospace';
+          txtCtx.fillStyle = "#3a4a6a";
+          txtCtx.textAlign = "left";
+          txtCtx.fillText(String(tick / 4), x + 3, 18);
+        }
+      }
+
+      arrangement.tracks.forEach((track, trackIndex) => {
+        const trackTop = top + trackIndex * trackH;
+        const laneH = trackH - 6;
+        const isCc = track.events.length > 0 && track.events.every((e) => e.type === "cc");
+
+        // Track name
+        txtCtx.font = 'bold 12px "Space Grotesk", sans-serif';
+        txtCtx.fillStyle = "#edf2ff";
+        txtCtx.textAlign = "left";
+        txtCtx.fillText(track.name, 6, trackTop + 16);
+
+        if (!isCc) {
+          const noteZoneH = Math.floor(laneH * 0.76);
+          const velZoneH = laneH - noteZoneH - 2;
+
+          const noteEvents = track.events.filter((e) => e.type !== "cc");
+          const range = noteEvents.length ? pitchRange(noteEvents) : { min: 60, max: 68 };
+          const pitchCount = range.max - range.min + 1;
+          const rowH = noteZoneH / pitchCount;
+
+          // Pitch labels
+          if (rowH >= 6) {
+            txtCtx.textAlign = "right";
+            txtCtx.font = '9px "IBM Plex Mono", monospace';
+            txtCtx.fillStyle = "#3a4a6a";
+            txtCtx.fillText(noteName(range.max), left - 4, trackTop + 10);
+            txtCtx.fillText(noteName(range.min), left - 4, trackTop + noteZoneH - 2);
+            txtCtx.textAlign = "left";
+          }
+
+          // Segment labels
+          track.segments.forEach((segment) => {
+            const segX = left + (segment.start / totalLength) * IW;
+            if (trackH > 40 && segment.name) {
+              txtCtx.font = '9px "IBM Plex Mono", monospace';
+              txtCtx.fillStyle = "rgba(80,110,180,0.75)";
+              txtCtx.fillText(segment.name, segX + 4, trackTop + 10);
+            }
+          });
+
+          // Note event labels
+          noteEvents.forEach((ev) => {
+            const x = left + (ev.start / totalLength) * IW;
+            const w = Math.max(3, ev.duration / totalLength * IW - 1);
+            const y = trackTop + (range.max - ev.pitch) * rowH + 1;
+            const h = Math.max(3, rowH - 2);
+            if (w > 22 && h > 9) {
+              const label = ev.instrument === ev.label ? ev.label : ev.instrument + ": " + ev.label;
+              txtCtx.font = '9px "IBM Plex Mono", monospace';
+              txtCtx.fillStyle = "rgba(255,255,255,0.82)";
+              txtCtx.textAlign = "left";
+              txtCtx.fillText(label, x + 3, y + h * 0.72);
+            }
+          });
+
+        } else {
+          // CC guide value labels
+          for (const pct of [0, 0.25, 0.5, 0.75, 1.0]) {
+            const y = trackTop + laneH * (1 - pct);
+            if (trackH > 44) {
+              txtCtx.font = '9px "IBM Plex Mono", monospace';
+              txtCtx.fillStyle = "#3a4a6a";
+              txtCtx.textAlign = "right";
+              txtCtx.fillText(String(Math.round(pct * 127)), left - 4, y + 4);
+              txtCtx.textAlign = "left";
+            }
+          }
+        }
+      });
 
       // Legend
       legend.innerHTML = "";
@@ -1052,20 +1210,31 @@ track resonance {
       eventRects.clear();
       const W = Math.max(200, rollFrame.clientWidth);
       const H = Math.max(200, rollFrame.clientHeight);
-      baseCanvas.width = hlCanvas.width = W;
-      baseCanvas.height = hlCanvas.height = H;
-      baseCanvas.style.width = hlCanvas.style.width = W + "px";
-      baseCanvas.style.height = hlCanvas.style.height = H + "px";
-      baseCtx.fillStyle = "#0b0e15";
-      baseCtx.fillRect(0, 0, W, H);
-      baseCtx.textAlign = "center";
-      baseCtx.font = '15px "IBM Plex Mono", monospace';
-      baseCtx.fillStyle = "#2a3450";
-      baseCtx.fillText("No notes to display", W / 2, H / 2 - 10);
-      baseCtx.font = '11px "IBM Plex Mono", monospace';
-      baseCtx.fillStyle = "#1a2440";
-      baseCtx.fillText(message, W / 2, H / 2 + 14);
-      baseCtx.textAlign = "left";
+      baseCanvas.width  = txtCanvas.width  = hlCanvas.width  = W;
+      baseCanvas.height = txtCanvas.height = hlCanvas.height = H;
+      baseCanvas.style.width  = txtCanvas.style.width  = hlCanvas.style.width  = W + "px";
+      baseCanvas.style.height = txtCanvas.style.height = hlCanvas.style.height = H + "px";
+
+      // Background via WebGL
+      if (glState) {
+        const { gl } = glState;
+        gl.viewport(0, 0, W, H);
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        glDrawRects([0, 0, W, H, 0x0b/255, 0x0e/255, 0x15/255, 1]);
+      }
+
+      // Text on txt layer
+      txtCtx.clearRect(0, 0, W, H);
+      txtCtx.textAlign = "center";
+      txtCtx.font = '15px "IBM Plex Mono", monospace';
+      txtCtx.fillStyle = "#2a3450";
+      txtCtx.fillText("No notes to display", W / 2, H / 2 - 10);
+      txtCtx.font = '11px "IBM Plex Mono", monospace';
+      txtCtx.fillStyle = "#1a2440";
+      txtCtx.fillText(message, W / 2, H / 2 + 14);
+      txtCtx.textAlign = "left";
+
       legend.innerHTML = "";
     }
 
@@ -1183,7 +1352,7 @@ track resonance {
       const mouseX = e.clientX - rect.left;
       const oldZoom = zoomX;
       const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
-      zoomX = Math.max(1, Math.min(16, zoomX * factor));
+      zoomX = Math.max(1, Math.min(64, zoomX * factor));
       if (zoomX === oldZoom) return;
       const contentX = rollFrame.scrollLeft + mouseX;
       const scaleFactor = zoomX / oldZoom;
