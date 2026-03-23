@@ -134,6 +134,13 @@ The current arrangement model has three levels:
 2. Sequence level
 3. Pattern level
 
+The language supports two complementary authoring styles that can be mixed in the same file:
+
+- **Track-oriented** — each `track` block defines one row and lists all patterns for that row
+- **Section-oriented** — each `section` block defines all tracks for one musical section; a `song [...]` line orders the sections
+
+Both styles compile to the same internal model.
+
 ### Track Level
 
 Tracks are the vertical lanes in the arrangement view.
@@ -172,6 +179,34 @@ In the current implementation:
 - and so on
 
 This is intentionally simpler than real Tidal `seqP`.
+
+### Section-Oriented Authoring
+
+As an alternative to defining tracks individually, you can define the arrangement as a set of named musical sections and then order them with a `song [...]` block.
+
+A `section` block contains `trackName: pattern` entries — one per track:
+
+```tidal
+let verse = section {
+  drums:  stack [ s "bd ~ cp ~", s "hh*8" ],
+  bass:   n "c2 ~ g2 ~ f2 ~ g2 ~" # s "bass",
+  lead:   n "c4 ~ e4 ~ g4 ~ e4 ~" # s "lead"
+}
+
+let chorus = section {
+  drums:  stack [ s "bd cp bd cp", s "[hh oh]*4" ],
+  bass:   n "c2 e2 g2 e2 f2 a2 g2 ~" # s "bass",
+  lead:   n "c5 b4 a4 g4 e4 ~ c4 e4" # s "lead"
+}
+
+song [ intro.8 verse.16 chorus.16 verse.16 chorus.16 outro.8 ]
+```
+
+The `song [...]` line is a space-separated sequence expression — the same `.N` repetition notation used inside `seqP` — and determines the order and count of each section in the arrangement.
+
+If a track is omitted from a section, that track produces silence for those steps.
+
+Section-oriented and track-oriented blocks can be mixed in the same file. Explicit `track {}` blocks are merged with the tracks derived from sections.
 
 ### Pattern Level
 
@@ -632,6 +667,37 @@ The four rendered segments are labeled `verse`, `verse`, `verse`, and `chorus`.
 
 Content labels propagate through `.N`, `replicate`, `cat`, and `ur` — so `(verse.3 chorus).4` produces 16 correctly labeled segments. Intermediate composition names do not overwrite the underlying content labels: if `let phrase = verse.3 chorus`, using `phrase.4` still labels each segment as `verse` or `chorus`, not `phrase`.
 
+### 20. Section Blocks And `song [...]`
+
+The parser supports section-oriented authoring as an alternative to `track` blocks.
+
+A `section` block is defined with `let name = section { ... }` (or `section name { ... }`):
+
+```tidal
+let verse = section {
+  drums:  stack [ s "bd ~ cp ~", s "hh*8" ],
+  bass:   n "c2 ~ g2 ~ f2 ~ g2 ~" # s "bass"
+}
+```
+
+Each line inside the braces is `trackName: patternExpression`. The colon is the separator; everything to its right is the same pattern syntax used everywhere else.
+
+A `song [...]` block orders the sections:
+
+```tidal
+song [ intro.8 verse.16 chorus.16 outro.8 ]
+```
+
+This is a space-separated sequence expression — `.N` repetition, parenthesized groups, and bare identifiers all work identically to `seqP` content.
+
+The parser normalizes sections into the standard track model:
+
+1. Collect all track names that appear across all sections
+2. For each track, build a timeline by iterating the song steps in order
+3. Sections that do not mention a track contribute silent steps for that track
+
+Explicit `track {}` blocks in the same file are preserved and merged with the section-derived tracks.
+
 ### 21. Fallback Single-Step Parsing
 
 If you do not use `track`, the parser still works.
@@ -803,6 +869,36 @@ stack [
   s "bd cp hh bd*2"
 ]*2
 ```
+
+### Section-Oriented Arrangement
+
+```tidal
+let intro = section {
+  drums: stack [ s "bd ~ ~ ~", s "hh ~ hh ~" ],
+  bass:  n "c2 ~ ~ ~" # s "bass"
+}
+
+let verse = section {
+  drums: stack [ s "bd ~ cp ~ bd ~ cp ~", s "hh*8" ],
+  bass:  n "c2 ~ g2 ~ f2 ~ g2 ~" # s "bass",
+  lead:  n "c4 ~ e4 ~ g4 ~ e4 ~" # s "lead"
+}
+
+let chorus = section {
+  drums: stack [ s "bd cp bd cp", s "[hh oh]*4" ],
+  bass:  n "c2 e2 g2 e2 f2 a2 g2 ~" # s "bass",
+  lead:  n "c5 b4 a4 g4 e4 ~ c4 e4" # s "lead"
+}
+
+let outro = section {
+  drums: stack [ s "bd ~ ~ ~", s "hh ~ hh ~" ],
+  bass:  n "c2 ~ ~ ~" # s "bass"
+}
+
+song [ intro.8 verse.16 chorus.16 verse.16 chorus.16 outro.8 ]
+```
+
+This produces four tracks (`drums`, `bass`, `lead`, `intro`/`outro` sections) across 72 bars. The `lead` track is silent for `intro` and `outro` steps because those sections do not define a `lead` entry.
 
 ### CC Automation With LFO
 
@@ -1054,7 +1150,11 @@ Key implementation areas in `parser.js`:
 - `parseSource` — one pattern expression into a list of events
 - `expandSequenceExpression` — `cat`, `replicate`, `ur`, `.N`, space-separated sequences
 - `extractLetBindings` — `let` binding collection with content label stamping
-- `parseArrangement` — full arrangement parsing into tracks and segments
+- `parseSectionBody` — splits `trackName: pattern` entries inside a `section` block
+- `extractSectionDefs` — scans top-level statements for `let name = section { ... }` and `section name { ... }` blocks
+- `extractSongBlock` — finds and removes the `song [ ... ]` ordering block
+- `normalizeSections` — transposes the section × track matrix into a standard per-track timeline
+- `parseArrangement` — full arrangement parsing into tracks and segments; routes through section normalization when section/song blocks are present
 
 Key areas in `index.html`:
 
@@ -1075,20 +1175,6 @@ Short version:
 - `seqP` likely needs to move closer to actual Tidal semantics over time
 
 ## Future Work
-
-### MIDI File Export (next priority)
-
-The arrangement data is already fully computed — MIDI export is primarily a serialization task.
-
-Planned format:
-- MIDI format 1 (one track per arrangement track)
-- 480 PPQ tick resolution
-- BPM written into the tempo track
-- Note-on/note-off events for note tracks
-- CC events for automation tracks
-- Browser download via `Blob` + `URL.createObjectURL` (no server required)
-
-Timing conversion: one arrangement step = 4 beats, so `ticks = event.start × 4 × 480`.
 
 ### Mini-Notation Gaps
 
