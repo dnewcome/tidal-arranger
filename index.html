@@ -95,7 +95,7 @@
 
     .arrangement-panel {
       display: grid;
-      grid-template-rows: auto minmax(0, 1fr);
+      grid-template-rows: minmax(0, 1fr);
       min-height: 0;
       height: calc(100vh - 90px);
     }
@@ -166,11 +166,26 @@
       pointer-events: none;
     }
 
+    .legend-row {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 10px 0 0;
+    }
+
     .legend {
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
-      padding: 10px 0 0;
+    }
+
+    .arrangement-info {
+      flex: 0 0 auto;
+      font-size: 0.8rem;
+      color: var(--ink-dim, #888);
+      white-space: nowrap;
+      padding-top: 2px;
     }
 
     .legend-item {
@@ -481,12 +496,6 @@
 
     <section class="workspace">
       <section class="panel arrangement-panel">
-        <header class="panel-header">
-          <div>
-            <h2 class="panel-title">Arrangement View</h2>
-          </div>
-          <p class="panel-note">16-step guide grid</p>
-        </header>
         <div class="roll-wrap">
           <div class="roll-frame">
             <div id="roll-spacer"></div>
@@ -496,7 +505,10 @@
               <canvas id="roll-highlight"></canvas>
             </div>
           </div>
-          <div id="legend" class="legend" aria-label="Instrument legend"></div>
+          <div class="legend-row">
+            <div id="legend" class="legend" aria-label="Instrument legend"></div>
+            <span id="arrangement-info" class="arrangement-info"></span>
+          </div>
         </div>
       </section>
     </section>
@@ -557,7 +569,7 @@ track resonance {
   <script type="module">
     import {
       parseArrangement, parseSource, assignEventIds,
-      instrumentColorMap, pitchRange, noteName
+      instrumentColorMap, pitchRange, noteName, palette
     } from "./parser.js";
 
     const rollFrame = document.querySelector(".roll-frame");
@@ -774,6 +786,17 @@ void main() { gl_FragColor = v_color; }`;
       return (60000 / getSelectedBpm()) * 4;
     }
 
+    const arrangementInfo = document.getElementById("arrangement-info");
+
+    function updateArrangementInfo() {
+      if (!currentArrangement) return;
+      const measures = currentArrangement.totalLength;
+      const totalSec = measures * 4 * 60 / getSelectedBpm();
+      const m = Math.floor(totalSec / 60);
+      const s = Math.floor(totalSec % 60).toString().padStart(2, "0");
+      arrangementInfo.textContent = `${measures} measure${measures === 1 ? "" : "s"} · ${m}:${s} at ${getSelectedBpm()} BPM`;
+    }
+
     function getSelectedMidiOutput() {
       if (!midiAccess) {
         return null;
@@ -952,7 +975,9 @@ void main() { gl_FragColor = v_color; }`;
       baseCanvas.style.width  = txtCanvas.style.width  = hlCanvas.style.width  = W + "px";
       baseCanvas.style.height = txtCanvas.style.height = hlCanvas.style.height = H + "px";
 
-      const left = 88, right = 16, top = 28, bottom = 8;
+      const hasSections = arrangement.sectionBlocks && arrangement.sectionBlocks.length > 0;
+      const sectionBarH = hasSections ? 24 : 0;
+      const left = 88, right = 16, top = 28 + sectionBarH, bottom = 8;
       const IW = worldW - left - right;   // world content width
       const VW = W - left - right;        // viewport content width (for horizontal fills)
       const IH = H - top - bottom;
@@ -969,6 +994,23 @@ void main() { gl_FragColor = v_color; }`;
 
       // 1. Background
       pushRect(instances, 0, 0, W, H, 0x0b/255, 0x0e/255, 0x15/255, 1);
+
+      // 2. Section bar
+      if (hasSections) {
+        const sectionColorMap = new Map();
+        arrangement.sectionBlocks.forEach((block) => {
+          if (!sectionColorMap.has(block.name)) {
+            sectionColorMap.set(block.name, palette[sectionColorMap.size % palette.length]);
+          }
+        });
+        arrangement.sectionBlocks.forEach((block) => {
+          const bx = left + (block.start / totalLength) * IW - scrollX;
+          const bw = (block.duration / totalLength) * IW;
+          if (bx + bw < left || bx > W) return;
+          const [r, g, b] = hexToRgb(sectionColorMap.get(block.name));
+          pushRect(instances, bx, 28, bw - 1, sectionBarH - 2, r, g, b, 0.85);
+        });
+      }
 
       // 5. Vertical grid lines (step/bar)
       const totalTicks = totalLength * 4;
@@ -1131,6 +1173,27 @@ void main() { gl_FragColor = v_color; }`;
       // ── Text layer (Canvas 2D) ───────────────────────────────────────────
       txtCtx.clearRect(0, 0, W, H);
 
+      // Section bar labels
+      if (hasSections) {
+        txtCtx.font = "bold 11px system-ui, sans-serif";
+        txtCtx.textBaseline = "middle";
+        arrangement.sectionBlocks.forEach((block) => {
+          const bx = left + (block.start / totalLength) * IW - scrollX;
+          const bw = (block.duration / totalLength) * IW;
+          if (bx + bw < left || bx > W) return;
+          const visX = Math.max(bx, left);
+          const visW = Math.min(bx + bw - 1, W) - visX;
+          if (visW < 8) return;
+          txtCtx.save();
+          txtCtx.beginPath();
+          txtCtx.rect(visX, 28, visW, sectionBarH - 2);
+          txtCtx.clip();
+          txtCtx.fillStyle = "#fff";
+          txtCtx.fillText(block.name, visX + 6, 28 + (sectionBarH - 2) / 2);
+          txtCtx.restore();
+        });
+      }
+
       // Bar number labels
       for (let tick = 0; tick <= totalLength * 4; tick++) {
         const isBar = tick % 4 === 0;
@@ -1273,6 +1336,7 @@ void main() { gl_FragColor = v_color; }`;
         currentArrangement = arrangement;
         currentEvents = events;
         renderArrangement(arrangement);
+        updateArrangementInfo();
         const instruments = [...new Set(events.map((event) => event.instrument))];
         const stepCount = arrangement.tracks.reduce((sum, track) => sum + track.segments.length, 0);
         status.textContent = `Rendered ${events.length} events across ${arrangement.tracks.length} track${arrangement.tracks.length === 1 ? "" : "s"}, ${stepCount} seq step${stepCount === 1 ? "" : "s"}, and ${instruments.length} instrument${instruments.length === 1 ? "" : "s"}.`;
@@ -1372,6 +1436,8 @@ void main() { gl_FragColor = v_color; }`;
     rollFrame.addEventListener("scroll", () => {
       if (currentArrangement) renderArrangement(currentArrangement);
     });
+
+    bpmInput.addEventListener("input", updateArrangementInfo);
 
     rollFrame.addEventListener("wheel", (e) => {
       if (!currentArrangement) return;

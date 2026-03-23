@@ -1172,6 +1172,7 @@ Short version:
 - `cat`, `replicate`, `ur`, `.N` repetition, and space-separated sequences are all implemented
 - trig conditions work at all levels of the pattern hierarchy
 - segment content labels are preserved through composition
+- section-oriented authoring (`section` blocks + `song [...]`) is implemented alongside track-oriented authoring
 - `seqP` likely needs to move closer to actual Tidal semantics over time
 
 ## Future Work

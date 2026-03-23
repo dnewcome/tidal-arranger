@@ -819,10 +819,21 @@ export function parseArrangement(source) {
     });
 
     const allTracks = [...syntheticTracks, ...explicitTracks];
-    return {
-      totalLength: Math.max(1, ...allTracks.flatMap((t) => t.segments.map((s) => s.start + s.duration))),
-      tracks: allTracks
-    };
+    const totalLength = Math.max(1, ...allTracks.flatMap((t) => t.segments.map((s) => s.start + s.duration)));
+
+    // Merge consecutive song steps with the same label into display blocks
+    const sectionBlocks = [];
+    for (const step of songSteps) {
+      const name = step.label || step.source;
+      const last = sectionBlocks[sectionBlocks.length - 1];
+      if (last && last.name === name) {
+        last.duration += 1;
+      } else {
+        sectionBlocks.push({ name, start: sectionBlocks.reduce((s, b) => s + b.duration, 0), duration: 1 });
+      }
+    }
+
+    return { totalLength, tracks: allTracks, sectionBlocks };
   }
 
   if (!trackBlocks.length) {
