@@ -665,12 +665,14 @@ export function parseArrangement(source) {
     const steps = sequenceStepsFromSource(topLevel.source, topLevel.env);
     const segments = steps.map((step, index) => {
       const { base: stepSrc, conds: stepConds } = parseCondition(step.source);
-      const passCount = step.pass ?? 1;
       const stepDef = { start: index, duration: 1 };
-      // AOT condition evaluation: filter events whose conditions don't fire on this pass.
-      // Stochastic events (prob) are rolled once here — each Execute commits one universe.
       const allEvents = scaleSequenceEvents(parseSource(stepSrc, { allowEmpty: true, parentConds: stepConds }), stepDef, "track-1");
-      const events = allEvents.filter((e) => evalCondition(e.conds, passCount));
+      // AOT condition evaluation: only filter when a repetition context exists (step.pass
+      // set by .N or replicate). Without one, all events render unconditionally so that
+      // conditions don't silently swallow events in non-repeating contexts.
+      const events = step.pass !== undefined
+        ? allEvents.filter((e) => evalCondition(e.conds, step.pass))
+        : allEvents;
       return { ...stepDef, source: step.source, label: step.label, name: step.label || `seq-${index + 1}`, events };
     });
     return {
@@ -683,10 +685,11 @@ export function parseArrangement(source) {
     const trackScope = extractLetBindings(trackBlock.body, topLevel.env);
     const segments = sequenceStepsFromSource(trackScope.source, trackScope.env).map((step, stepIndex) => {
       const { base: stepSrc, conds: stepConds } = parseCondition(step.source);
-      const passCount = step.pass ?? 1;
       const stepDef = { start: stepIndex, duration: 1 };
       const allEvents = stepSrc ? scaleSequenceEvents(parseSource(stepSrc, { allowEmpty: true, parentConds: stepConds }), stepDef, trackBlock.name) : [];
-      const events = allEvents.filter((e) => evalCondition(e.conds, passCount));
+      const events = step.pass !== undefined
+        ? allEvents.filter((e) => evalCondition(e.conds, step.pass))
+        : allEvents;
       return { ...stepDef, source: step.source, label: step.label, name: step.label || `seq-${stepIndex + 1}`, events };
     });
     return {

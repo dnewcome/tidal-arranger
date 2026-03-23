@@ -830,7 +830,7 @@ track resonance {
             const y = laneY + (trackRange.max - event.pitch) * rowHeight + 2;
             const h = Math.max(8, rowHeight - 4);
             const fill = colorMap.get(event.instrument);
-            const label = `${event.instrument}: ${event.label}`;
+            const label = event.instrument === event.label ? event.label : `${event.instrument}: ${event.label}`;
             const isActive = activeEventIds.has(event.id);
             parts.push(`<g data-event-id="${event.id}">`);
             parts.push(`<rect class="note-body" x="${x + 1}" y="${y}" width="${w}" height="${h}" rx="7" fill="${fill}" opacity="${isActive ? "1" : "0.9"}" ${isActive ? `filter="url(#note-glow)"` : ""}></rect>`);
