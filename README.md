@@ -2,7 +2,7 @@
 
 `Tidal Pattern Arranger` is a static HTML application for exploring a small Tidal-inspired arrangement language in a DAW-style piano-roll view.
 
-The entire app currently lives in `index.html`. There is no build step, no bundler, and no server requirement beyond opening the file in a browser. The parser, arrangement model, transport, Web MIDI integration, and SVG renderer all run in-browser.
+The entire app currently lives in `index.html`. There is no build step, no bundler, and no server requirement beyond opening the file in a browser. The parser, arrangement model, transport, Web MIDI integration, and WebGL renderer all run in-browser.
 
 This README documents:
 
@@ -30,7 +30,7 @@ The project has two HTML files:
 
 - type pattern source into a slide-out editor
 - parse that source into a multi-track arrangement
-- render the arrangement as a piano-roll style SVG view
+- render the arrangement as a piano-roll style WebGL view
 - send note output over Web MIDI
 - visually highlight notes as they play instead of using a separate playhead bar
 - export the arrangement as a MIDI file
@@ -909,7 +909,21 @@ track drums {
 
 ## Rendering Model
 
-The renderer converts parsed arrangement data into an SVG piano roll.
+The renderer converts parsed arrangement data into a piano roll using WebGL for geometry and Canvas 2D for text.
+
+### Architecture
+
+The arrangement panel uses three stacked canvas layers:
+
+- **`#roll-base`** (WebGL) — all solid-color geometry: note rectangles, grid lines, piano key row tints, velocity bars, CC step-function fills and strokes. All geometry is batched into a single instanced draw call per render.
+- **`#roll-text`** (Canvas 2D) — text only: bar numbers, track names, pitch labels, segment labels, note labels.
+- **`#roll-highlight`** (Canvas 2D) — active note glow during playback, redrawn only when highlight state changes.
+
+The base canvas is always viewport-sized. An invisible spacer div drives the native horizontal scrollbar to the full world width (`viewport × zoomX`). On every scroll or zoom event the base and text layers are redrawn from the current scroll offset, culling off-screen elements before they reach the GPU.
+
+### Performance
+
+Because all geometry is submitted as one batched WebGL draw call, render cost scales with the number of visible events rather than total events. A 128-bar, 4-track song with thousands of notes renders in a single GPU pass. Zooming and scrolling trigger one redraw each via the scroll listener.
 
 ### Track Rendering
 
@@ -953,7 +967,7 @@ When you press `Play`:
 - it schedules note-on and note-off events for note tracks
 - it schedules CC messages for automation tracks
 - the selected MIDI output receives all messages
-- the corresponding note or automation bars are highlighted in the SVG
+- the corresponding note or automation bars are highlighted in the piano roll
 
 ### Highlighting Model
 
@@ -983,6 +997,12 @@ That makes it possible to inspect timing without external gear.
 
 - `Ctrl+Enter` / `Cmd+Enter`: execute and rerender the pattern
 - `Ctrl+B` / `Cmd+B`: open or close the pattern editor drawer
+
+## Arrangement View Navigation
+
+- **Scroll wheel**: zoom in/out centered on the mouse cursor (up to 256×)
+- **Shift + scroll wheel**: pan left/right
+- **Scrollbar**: pan left/right
 
 ## Parser And App Limitations
 
@@ -1019,7 +1039,7 @@ The parser does not currently implement:
 The project is split across three files:
 
 - **`parser.js`** — all parsing logic, no DOM dependencies. Can be imported by any HTML file.
-- **`index.html`** — song arrangement view (editor drawer, SVG piano roll, Web MIDI, MIDI export)
+- **`index.html`** — song arrangement view (editor drawer, WebGL piano roll, Web MIDI, MIDI export)
 - **`explore.html`** — pattern explorer (multi-playhead, trig condition visualization)
 
 Both HTML files use `<script type="module">` and require a local web server (`python3 -m http.server 8080`) — `file://` URLs block ES module imports.
@@ -1038,7 +1058,7 @@ Key implementation areas in `parser.js`:
 
 Key areas in `index.html`:
 
-- `renderArrangement` — SVG renderer for note tracks and CC automation lanes
+- `renderArrangement` — WebGL geometry batch + Canvas 2D text for note tracks and CC automation lanes
 - `startPlayback` / `triggerEvent` — Web MIDI scheduling and note-on/off dispatch
 - `exportMidi` — MIDI file export via Blob download
 - `setDrawerOpen` — editor drawer toggle
