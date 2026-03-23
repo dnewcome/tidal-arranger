@@ -133,16 +133,26 @@
       background: var(--panel-strong);
       border: 1px solid var(--border);
       border-radius: var(--radius);
-      overflow-x: auto;
+      overflow-x: scroll;
       overflow-y: hidden;
       min-height: 0;
       height: 100%;
+      position: relative;
     }
 
     .canvas-stack {
-      position: relative;
+      position: sticky;
+      left: 0;
       width: 100%;
       height: 100%;
+    }
+
+    #roll-spacer {
+      position: absolute;
+      top: 0;
+      left: 0;
+      height: 1px;
+      pointer-events: none;
     }
 
     .canvas-stack canvas {
@@ -479,6 +489,7 @@
         </header>
         <div class="roll-wrap">
           <div class="roll-frame">
+            <div id="roll-spacer"></div>
             <div class="canvas-stack">
               <canvas id="roll-base"></canvas>
               <canvas id="roll-text"></canvas>
@@ -550,6 +561,7 @@ track resonance {
     } from "./parser.js";
 
     const rollFrame = document.querySelector(".roll-frame");
+    const rollSpacer = document.getElementById("roll-spacer");
     const baseCanvas = document.getElementById("roll-base");
     const txtCanvas = document.getElementById("roll-text");
     const hlCanvas = document.getElementById("roll-highlight");
@@ -927,17 +939,22 @@ void main() { gl_FragColor = v_color; }`;
     }
 
     function renderArrangement(arrangement) {
-      const W = Math.min(32000, Math.max(200, rollFrame.clientWidth * zoomX));
+      const worldW = Math.max(200, rollFrame.clientWidth * zoomX);
+      const W = Math.max(200, rollFrame.clientWidth);
       const H = Math.max(200, rollFrame.clientHeight);
+      const scrollX = rollFrame.scrollLeft;
 
-      // Resize all three canvases
+      rollSpacer.style.width = worldW + "px";
+
+      // Resize all three canvases to viewport size
       baseCanvas.width  = txtCanvas.width  = hlCanvas.width  = W;
       baseCanvas.height = txtCanvas.height = hlCanvas.height = H;
       baseCanvas.style.width  = txtCanvas.style.width  = hlCanvas.style.width  = W + "px";
       baseCanvas.style.height = txtCanvas.style.height = hlCanvas.style.height = H + "px";
 
       const left = 88, right = 16, top = 28, bottom = 8;
-      const IW = W - left - right;
+      const IW = worldW - left - right;   // world content width
+      const VW = W - left - right;        // viewport content width (for horizontal fills)
       const IH = H - top - bottom;
       const totalLength = Math.max(1, arrangement.totalLength);
       const trackCount = Math.max(1, arrangement.tracks.length);
@@ -958,13 +975,12 @@ void main() { gl_FragColor = v_color; }`;
       const minStepPx = 3; // skip step lines if too dense
       const stepPx = IW / totalTicks;
       for (let tick = 0; tick <= totalTicks; tick++) {
-        const x = left + IW * tick / totalTicks;
+        const x = left + IW * tick / totalTicks - scrollX;
         const isBar = tick % 4 === 0;
         if (!isBar && stepPx < minStepPx) continue;
+        if (x < left - 2 || x > W) continue;
         const lw = isBar ? 1.5 : 1;
-        const [r, g, b, a] = isBar
-          ? [1, 1, 1, 0.1]
-          : [1, 1, 1, 0.035];
+        const [r, g, b, a] = isBar ? [1, 1, 1, 0.1] : [1, 1, 1, 0.035];
         pushRect(instances, x, top, lw, H - top - bottom, r, g, b, a);
       }
 
@@ -973,7 +989,7 @@ void main() { gl_FragColor = v_color; }`;
         const laneH = trackH - 6;
         const isCc = track.events.length > 0 && track.events.every((e) => e.type === "cc");
 
-        // 2. Track separator line
+        // 2. Track separator line (full viewport width)
         pushRect(instances, 0, trackTop, W, 1, 1, 1, 1, 0.06);
 
         if (!isCc) {
@@ -986,31 +1002,34 @@ void main() { gl_FragColor = v_color; }`;
           const pitchCount = range.max - range.min + 1;
           const rowH = noteZoneH / pitchCount;
 
-          // 3. Piano key black-note row tints + 4. C-note lines
+          // 3. Piano key black-note row tints + 4. C-note lines (viewport width)
           for (let pitch = range.min; pitch <= range.max; pitch++) {
             const row = range.max - pitch;
             const y = trackTop + row * rowH;
             const isBlack = [1, 3, 6, 8, 10].includes(pitch % 12);
             if (isBlack) {
-              pushRect(instances, left, y, IW, rowH, 20/255, 20/255, 30/255, 0.55);
+              pushRect(instances, left, y, VW, rowH, 20/255, 20/255, 30/255, 0.55);
             }
             if (pitch % 12 === 0) {
-              pushRect(instances, left, y, IW, 1, 1, 1, 1, 0.07);
+              pushRect(instances, left, y, VW, 1, 1, 1, 1, 0.07);
             }
           }
 
-          // Segment boundary lines (solid, low alpha instead of dashed)
+          // Segment boundary lines
           track.segments.forEach((segment) => {
-            const segX = left + (segment.start / totalLength) * IW;
-            pushRect(instances, segX, trackTop, 1, laneH, 1, 1, 1, 0.08);
+            const segX = left + (segment.start / totalLength) * IW - scrollX;
+            if (segX >= left && segX <= W) {
+              pushRect(instances, segX, trackTop, 1, laneH, 1, 1, 1, 0.08);
+            }
           });
 
           // 8. Note rectangles (alpha 0.84)
           noteEvents.forEach((ev) => {
-            const x = left + (ev.start / totalLength) * IW;
+            const x = left + (ev.start / totalLength) * IW - scrollX;
             const w = Math.max(3, ev.duration / totalLength * IW - 1);
             const y = trackTop + (range.max - ev.pitch) * rowH + 1;
             const h = Math.max(3, rowH - 2);
+            if (x + w < left || x > W) return;
             const fill = colorMap.get(ev.instrument) || "#7ae582";
             const [r, g, b] = hexToRgb(fill);
 
@@ -1020,11 +1039,12 @@ void main() { gl_FragColor = v_color; }`;
 
           // 6. Velocity lane separator
           if (velZoneH > 5) {
-            pushRect(instances, left, velZoneY, IW, 1, 1, 1, 1, 0.05);
+            pushRect(instances, left, velZoneY, VW, 1, 1, 1, 1, 0.05);
 
             // 7. Velocity bars
             noteEvents.forEach((ev) => {
-              const x = left + (ev.start / totalLength) * IW;
+              const x = left + (ev.start / totalLength) * IW - scrollX;
+              if (x + 2 < left || x > W) return;
               const velNorm = (ev.velocity || 100) / 127;
               const bH = Math.max(1, velNorm * velZoneH);
               const fill = colorMap.get(ev.instrument) || "#7ae582";
@@ -1035,10 +1055,10 @@ void main() { gl_FragColor = v_color; }`;
 
         } else {
           // CC track
-          // Guide lines at 0%, 25%, 50%, 75%, 100%
+          // Guide lines at 0%, 25%, 50%, 75%, 100% (viewport width)
           for (const pct of [0, 0.25, 0.5, 0.75, 1.0]) {
             const y = trackTop + laneH * (1 - pct);
-            pushRect(instances, left, y, IW, 1, 1, 1, 1, 0.05);
+            pushRect(instances, left, y, VW, 1, 1, 1, 1, 0.05);
           }
 
           // Group events by ccn
@@ -1057,25 +1077,23 @@ void main() { gl_FragColor = v_color; }`;
 
             // 9. CC fill rects (step function area, alpha 0.15)
             sorted.forEach((ev) => {
-              const x1 = left + (ev.start / totalLength) * IW;
-              const x2 = left + ((ev.start + ev.duration) / totalLength) * IW;
+              const x1 = left + (ev.start / totalLength) * IW - scrollX;
+              const x2 = left + ((ev.start + ev.duration) / totalLength) * IW - scrollX;
               const yTop = trackTop + laneH * (1 - ev.pitch / 127);
               const rectH = baseY - yTop;
-              if (rectH > 0 && x2 - x1 > 0) {
+              if (rectH > 0 && x2 - x1 > 0 && x2 > left && x1 < W) {
                 pushRect(instances, x1, yTop, x2 - x1, rectH, r, g, b, 0.15);
               }
             });
 
             // 10. CC line segments (2px tall rects for step-function stroke)
             sorted.forEach((ev) => {
-              const x1 = left + (ev.start / totalLength) * IW;
-              const x2 = left + ((ev.start + ev.duration) / totalLength) * IW;
+              const x1 = left + (ev.start / totalLength) * IW - scrollX;
+              const x2 = left + ((ev.start + ev.duration) / totalLength) * IW - scrollX;
               const y = trackTop + laneH * (1 - ev.pitch / 127);
-              // horizontal segment
-              if (x2 - x1 > 0) {
+              if (x2 - x1 > 0 && x2 > left && x1 < W) {
                 pushRect(instances, x1, y, x2 - x1, 2, r, g, b, 1);
               }
-              // Store rects for highlighting
               const w = Math.max(2, (ev.duration / totalLength) * IW - 1);
               const h = Math.max(4, baseY - y);
               eventRects.set(ev.id, { x: x1, y, w, h, fill });
@@ -1085,18 +1103,21 @@ void main() { gl_FragColor = v_color; }`;
             for (let i = 1; i < sorted.length; i++) {
               const prev = sorted[i - 1];
               const curr = sorted[i];
-              const xConn = left + (curr.start / totalLength) * IW;
+              const xConn = left + (curr.start / totalLength) * IW - scrollX;
               const yPrev = trackTop + laneH * (1 - prev.pitch / 127);
               const yCurr = trackTop + laneH * (1 - curr.pitch / 127);
               const yMin = Math.min(yPrev, yCurr);
               const yMax = Math.max(yPrev, yCurr);
-              if (yMax - yMin > 0) {
+              if (yMax - yMin > 0 && xConn >= left && xConn <= W) {
                 pushRect(instances, xConn, yMin, 2, yMax - yMin, r, g, b, 1);
               }
             }
           });
         }
       });
+
+      // Gutter background — drawn last to clip scrolled content bleeding left
+      pushRect(instances, 0, 0, left, H, 0x0b/255, 0x0e/255, 0x15/255, 1);
 
       // ── Upload and draw all rects ────────────────────────────────────────
       if (glState) {
@@ -1114,7 +1135,8 @@ void main() { gl_FragColor = v_color; }`;
       for (let tick = 0; tick <= totalLength * 4; tick++) {
         const isBar = tick % 4 === 0;
         if (isBar && tick < totalLength * 4) {
-          const x = left + IW * tick / (totalLength * 4);
+          const x = left + IW * tick / (totalLength * 4) - scrollX;
+          if (x < left || x > W) continue;
           txtCtx.font = '10px "IBM Plex Mono", monospace';
           txtCtx.fillStyle = "#3a4a6a";
           txtCtx.textAlign = "left";
@@ -1154,8 +1176,8 @@ void main() { gl_FragColor = v_color; }`;
 
           // Segment labels
           track.segments.forEach((segment) => {
-            const segX = left + (segment.start / totalLength) * IW;
-            if (trackH > 40 && segment.name) {
+            const segX = left + (segment.start / totalLength) * IW - scrollX;
+            if (trackH > 40 && segment.name && segX >= left && segX <= W) {
               txtCtx.font = '9px "IBM Plex Mono", monospace';
               txtCtx.fillStyle = "rgba(80,110,180,0.75)";
               txtCtx.fillText(segment.name, segX + 4, trackTop + 10);
@@ -1164,10 +1186,11 @@ void main() { gl_FragColor = v_color; }`;
 
           // Note event labels
           noteEvents.forEach((ev) => {
-            const x = left + (ev.start / totalLength) * IW;
+            const x = left + (ev.start / totalLength) * IW - scrollX;
             const w = Math.max(3, ev.duration / totalLength * IW - 1);
             const y = trackTop + (range.max - ev.pitch) * rowH + 1;
             const h = Math.max(3, rowH - 2);
+            if (x + w < left || x > W) return;
             if (w > 22 && h > 9) {
               const label = ev.instrument === ev.label ? ev.label : ev.instrument + ": " + ev.label;
               txtCtx.font = '9px "IBM Plex Mono", monospace';
@@ -1208,6 +1231,7 @@ void main() { gl_FragColor = v_color; }`;
       clearActiveHighlights();
       zoomX = 1.0;
       eventRects.clear();
+      rollSpacer.style.width = "";
       const W = Math.max(200, rollFrame.clientWidth);
       const H = Math.max(200, rollFrame.clientHeight);
       baseCanvas.width  = txtCanvas.width  = hlCanvas.width  = W;
@@ -1345,19 +1369,32 @@ void main() { gl_FragColor = v_color; }`;
       status.textContent = `Exported ${tracks.length} track(s) as arrangement.mid`;
     }
 
+    rollFrame.addEventListener("scroll", () => {
+      if (currentArrangement) renderArrangement(currentArrangement);
+    });
+
     rollFrame.addEventListener("wheel", (e) => {
       if (!currentArrangement) return;
       e.preventDefault();
+      if (e.shiftKey) {
+        rollFrame.scrollLeft += e.deltaY;
+        return;
+      }
       const rect = rollFrame.getBoundingClientRect();
       const mouseX = e.clientX - rect.left;
       const oldZoom = zoomX;
       const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
-      zoomX = Math.max(1, Math.min(64, zoomX * factor));
+      zoomX = Math.max(1, Math.min(256, zoomX * factor));
       if (zoomX === oldZoom) return;
-      const contentX = rollFrame.scrollLeft + mouseX;
       const scaleFactor = zoomX / oldZoom;
+      // Anchor zoom to mouse position within the scrollable content area (right of gutter)
+      const gutterW = 88;
+      const contentMouseX = Math.max(0, mouseX - gutterW);
+      const newScrollLeft = (rollFrame.scrollLeft + contentMouseX) * scaleFactor - contentMouseX;
+      // Update spacer to new world width before setting scrollLeft so clamping is correct
+      rollSpacer.style.width = Math.max(200, rollFrame.clientWidth * zoomX) + "px";
+      rollFrame.scrollLeft = Math.max(0, newScrollLeft);
       renderArrangement(currentArrangement);
-      rollFrame.scrollLeft = contentX * scaleFactor - mouseX;
     }, { passive: false });
 
     runButton.addEventListener("click", executePattern);
