@@ -42,7 +42,19 @@ The project has two HTML files:
 - trig conditions rendered as hatched/dimmed notes until they fire
 - designed for experimenting with single patterns and multi-playhead interaction
 
-Both files import from `parser.js`, which contains all parsing logic and has no DOM dependencies.
+**`midi-import.html`** — the MIDI-to-Tidal converter (browser)
+
+- drag-and-drop a MIDI file to convert it to a tidal pattern
+- configurable quantization (quarter, 8th, 16th, 32nd notes)
+- sharps or flats for accidental spelling
+- one-click copy of the generated pattern
+
+**`midi2tidal-cli.js`** — the MIDI-to-Tidal converter (command line)
+
+- reads a MIDI file and prints a tidal pattern to stdout
+- same conversion logic as the browser tool
+
+Both HTML files and the CLI tool import from `parser.js` and `midi2tidal.js`, which contain all parsing and conversion logic with no DOM dependencies.
 
 The current language is Tidal-inspired, not a full Tidal interpreter.
 
@@ -1130,15 +1142,90 @@ The parser does not currently implement:
 
 4. `let` bindings are lightweight arrangement-expression bindings, not general Tidal/Haskell bindings.
 
+## Round-Tripping: Playing In Patterns By Hand
+
+The intended round-trip workflow is:
+
+1. **Record** a pattern in your DAW or hardware sequencer and export it as a MIDI file
+2. **Convert** the MIDI file to a tidal pattern using the converter
+3. **Edit** the pattern in the tidal language — clean up quantization artifacts, add trig conditions, name the binding, compose it with other patterns
+4. **Arrange** the pattern in `index.html` and export the finished arrangement back to MIDI
+
+This lets you use live performance as raw material for text-based composition. You play the feel you want, then lock it into the pattern system where you can repeat, vary, and structure it precisely.
+
+### Using the CLI tool
+
+```bash
+node midi2tidal-cli.js bass-riff.mid
+node midi2tidal-cli.js bass-riff.mid --quant 8
+node midi2tidal-cli.js melody.mid --quant 16 --flats
+```
+
+Output is printed to stdout and can be piped or redirected:
+
+```bash
+node midi2tidal-cli.js riff.mid >> my-song.tidal
+```
+
+### Using the browser tool
+
+Open `midi-import.html` in a browser (requires a local server — `python3 -m http.server 8080`). Drag in a MIDI file, choose quantization, and copy the output directly into the pattern editor in `index.html`.
+
+### What the converter produces
+
+The converter outputs a literal `track imported { seqP [...] }` block with one `seqP` step per bar. Each MIDI channel becomes a separate voice. Channel 9 (GM drums) is mapped to drum sample names (`bd`, `cp`, `hh`, etc.). Simultaneous notes on a pitched channel are split into separate voice rows in a `stack`.
+
+Example output for a two-bar bass riff on channel 0, 16th-note grid:
+
+```tidal
+-- 2 bars · 16 slots/bar · ch0
+-- Assumes 4/4 time. Rename ch0, ch1… to match your instruments.
+
+track imported {
+  seqP [
+    n "c2 ~ ~ ~ e2 ~ ~ ~ g2 ~ ~ ~ e2 ~ ~ ~" # s "ch0",
+    n "a1 ~ ~ ~ ~ ~ e2 ~ f1 ~ ~ ~ c2 ~ g1 ~" # s "ch0"
+  ]
+}
+```
+
+### Editing after import
+
+The literal output is a starting point. Common edits after importing:
+
+- Rename `"ch0"` to the actual instrument name (`"bass"`, `"lead"`, etc.)
+- Wrap the pattern in a `let` binding so it can be referenced by name in a `seqP`
+- Add trig conditions (`!N`, `?P`) to introduce variation across repetitions
+- Move the pattern into a `section` block if using section-oriented authoring
+- Simplify repeated rests into `*N` notation where the pattern repeats
+
+```tidal
+-- After editing:
+let bass_riff = n "c2 ~ ~ ~ e2 ~ ~ ~ g2 ~ ~ ~ e2 ~ ~ ~" # s "bass"
+
+track bass {
+  seqP [ bass_riff.8 ]
+}
+```
+
+### Quantization
+
+The converter snaps each note to the nearest grid slot. If your performance has timing feel that you want to preserve, use a finer grid (32nd notes). If you want a tighter, cleaner output that is easier to read and edit, use a coarser grid (8th notes).
+
+Silent bars are output as `s "~"` to preserve step count. Bars at the end of the file that contain no notes can be trimmed manually.
+
 ## Implementation Notes
 
-The project is split across three files:
+The project is split across these files:
 
-- **`parser.js`** — all parsing logic, no DOM dependencies. Can be imported by any HTML file.
+- **`parser.js`** — arrangement parsing, no DOM dependencies. Imported by all HTML files.
+- **`midi2tidal.js`** — MIDI-to-Tidal conversion, no DOM dependencies. Imported by the browser and CLI tools.
 - **`index.html`** — song arrangement view (editor drawer, WebGL piano roll, Web MIDI, MIDI export)
 - **`explore.html`** — pattern explorer (multi-playhead, trig condition visualization)
+- **`midi-import.html`** — browser-based MIDI-to-Tidal converter
+- **`midi2tidal-cli.js`** — Node.js CLI wrapper for `midi2tidal.js`
 
-Both HTML files use `<script type="module">` and require a local web server (`python3 -m http.server 8080`) — `file://` URLs block ES module imports.
+All HTML files use `<script type="module">` and require a local web server (`python3 -m http.server 8080`) — `file://` URLs block ES module imports.
 
 Key implementation areas in `parser.js`:
 
