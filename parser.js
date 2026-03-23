@@ -517,6 +517,18 @@ export function expandSequenceExpression(expression, env = {}) {
     return env[condBase].map((step) => ({ ...step, source: step.source + suffix }));
   }
 
+  // Space-separated sequence: verse chorus, verse.3 chorus.8
+  // IMPORTANT: this check must come before .N so that "a.4 b.8" is parsed as
+  // [a×4, b×8] rather than the greedy .N match treating it as (a.4 b).8.
+  // Guard: all parts must be bare identifiers (optionally with .N) or paren groups —
+  // prevents complex pattern expressions like `stack [ s "bd" ]` from being split.
+  const seqParts = splitTopLevel(trimmed, "space");
+  if (seqParts.length > 1 && seqParts.every(
+    (p) => /^[a-zA-Z_][a-zA-Z0-9_-]*(?:\.\d+)?$/.test(p) || (p.startsWith("(") && p.endsWith(")"))
+  )) {
+    return seqParts.flatMap((part) => expandSequenceExpression(part, env));
+  }
+
   // .N repetition suffix: expr.N → N copies of expr, each stamped with pass: 1..N
   // Pass counts reset per phrase (reset-per-phrase semantics): inner recurrences are
   // self-contained — the outer cycle index does not accumulate into inner pass counts.
@@ -567,16 +579,6 @@ export function expandSequenceExpression(expression, env = {}) {
       for (let i = 0; i < slotCount; i += 1) result.push(steps[i % steps.length]);
     }
     return result;
-  }
-
-  // Space-separated sequence: verse chorus, verse.3 chorus
-  // Guard: all parts must be bare identifiers (optionally with .N) or paren groups —
-  // prevents complex pattern expressions like `stack [ s "bd" ]` from being split.
-  const seqParts = splitTopLevel(trimmed, "space");
-  if (seqParts.length > 1 && seqParts.every(
-    (p) => /^[a-zA-Z_][a-zA-Z0-9_-]*(?:\.\d+)?$/.test(p) || (p.startsWith("(") && p.endsWith(")"))
-  )) {
-    return seqParts.flatMap((part) => expandSequenceExpression(part, env));
   }
 
   return [{ source: trimmed, label: null }];
@@ -656,13 +658,175 @@ export function sequenceStepsFromSource(source, env = {}) {
   return trimmed ? expandSequenceExpression(trimmed, env) : [];
 }
 
+// ── Section-oriented authoring ────────────────────────────────────────────────
+//
+// Alternative to track-first authoring. A section groups all tracks for one
+// musical section in one block. A song line orders the sections.
+//
+// Syntax:
+//   let verse = section {
+//     drums:  stack [ s "bd cp bd cp" ],
+//     bass:   n "c2 ~ g2 ~" # s "bass"
+//   }
+//   song [ intro.8 verse.16 chorus.16 outro.8 ]
+//
+// The parser transposes section × track into the standard track model before
+// handing off to the existing arrangement renderer. Nothing downstream changes.
+
+export function parseSectionBody(body) {
+  const tracks = new Map();
+  const entries = splitTopLevel(body.trim(), "comma");
+  for (const entry of entries) {
+    if (!entry.trim()) continue;
+    // Find first ':' at depth 0 — separates track name from pattern
+    let depth = 0;
+    let quote = "";
+    let colonIdx = -1;
+    for (let i = 0; i < entry.length; i += 1) {
+      const c = entry[i];
+      if (quote) { if (c === quote) quote = ""; continue; }
+      if (c === "\"" || c === "'") { quote = c; continue; }
+      if (c === "[" || c === "(" || c === "{") { depth += 1; continue; }
+      if (c === "]" || c === ")" || c === "}") { depth -= 1; continue; }
+      if (c === ":" && depth === 0) { colonIdx = i; break; }
+    }
+    if (colonIdx === -1) continue;
+    const trackName = entry.slice(0, colonIdx).trim();
+    const pattern = entry.slice(colonIdx + 1).trim();
+    if (trackName && pattern) tracks.set(trackName, pattern);
+  }
+  return tracks;
+}
+
+export function extractSectionDefs(source) {
+  const sectionDefs = new Map();
+  const statements = splitTopLevelStatements(source);
+  const remaining = [];
+
+  for (const stmt of statements) {
+    // let name = section { ... }
+    const letMatch = stmt.match(/^let\s+([a-zA-Z][a-zA-Z0-9_-]*)\s*=\s*section\s*\{/);
+    if (letMatch) {
+      const name = letMatch[1];
+      const braceStart = stmt.indexOf("{", letMatch[0].lastIndexOf("section"));
+      const braceEnd = findMatchingDelimiter(stmt, braceStart, "{", "}");
+      if (braceEnd !== -1) {
+        sectionDefs.set(name, parseSectionBody(stmt.slice(braceStart + 1, braceEnd)));
+      }
+      continue;
+    }
+    // section name { ... }
+    const standaloneMatch = stmt.match(/^section\s+("[^"]+"|'[^']+'|[a-zA-Z0-9_-]+)\s*\{/);
+    if (standaloneMatch) {
+      const name = normalizeBlockName(standaloneMatch[1], "section");
+      const braceStart = stmt.indexOf("{", standaloneMatch[0].length - 1);
+      const braceEnd = findMatchingDelimiter(stmt, braceStart, "{", "}");
+      if (braceEnd !== -1) {
+        sectionDefs.set(name, parseSectionBody(stmt.slice(braceStart + 1, braceEnd)));
+      }
+      continue;
+    }
+    remaining.push(stmt);
+  }
+
+  return { sectionDefs, source: remaining.join("\n") };
+}
+
+export function extractSongBlock(source) {
+  const regex = /\bsong\b\s*\[/g;
+  let songSource = null;
+  let remaining = source;
+  let match;
+  while ((match = regex.exec(source))) {
+    const openIndex = source.indexOf("[", match.index);
+    const closeIndex = findMatchingDelimiter(source, openIndex, "[", "]");
+    if (closeIndex === -1) throw new Error("Unclosed song block.");
+    songSource = source.slice(openIndex + 1, closeIndex).trim();
+    remaining = source.slice(0, match.index) + source.slice(closeIndex + 1);
+    break;
+  }
+  return { songSource, source: remaining };
+}
+
+export function normalizeSections(sectionDefs, songSteps, env) {
+  // Collect all track names, preserving first-seen order
+  const allTrackNames = [];
+  for (const trackMap of sectionDefs.values()) {
+    for (const name of trackMap.keys()) {
+      if (!allTrackNames.includes(name)) allTrackNames.push(name);
+    }
+  }
+  if (!allTrackNames.length) return [];
+
+  return allTrackNames.map((trackName) => {
+    const segments = songSteps.map((step, stepIndex) => {
+      const stepDef = { start: stepIndex, duration: 1 };
+      const { base: stepSrc, conds: stepConds } = parseCondition(step.source);
+      const sectionTrackMap = sectionDefs.get(stepSrc);
+      const patternSrc = sectionTrackMap?.get(trackName) || "";
+      const allEvents = patternSrc
+        ? scaleSequenceEvents(parseSource(patternSrc, { allowEmpty: true, parentConds: stepConds }), stepDef, trackName)
+        : [];
+      const events = step.pass !== undefined
+        ? allEvents.filter((e) => evalCondition(e.conds, step.pass))
+        : allEvents;
+      return {
+        ...stepDef,
+        source: step.source,
+        label: step.label,
+        name: step.label || stepSrc || `seq-${stepIndex + 1}`,
+        events
+      };
+    });
+    return { name: trackName, segments, events: segments.flatMap((s) => s.events) };
+  });
+}
+
 export function parseArrangement(source) {
   const sanitized = stripLineComments(source);
-  const topLevel = extractLetBindings(sanitized);
-  const trackBlocks = extractTrackBlocks(topLevel.source);
+
+  // Section-oriented path: extract section defs and song block before let bindings
+  const { sectionDefs, source: afterSections } = extractSectionDefs(sanitized);
+  const topLevel = extractLetBindings(afterSections);
+  const { songSource, source: afterSong } = extractSongBlock(topLevel.source);
+  const trackBlocks = extractTrackBlocks(afterSong);
+
+  if (sectionDefs.size > 0 || songSource !== null) {
+    // Build a minimal env so section names resolve with labels in expandSequenceExpression
+    const sectionEnv = { ...topLevel.env };
+    for (const name of sectionDefs.keys()) {
+      if (!sectionEnv[name]) sectionEnv[name] = [{ source: name, label: name }];
+    }
+    const songSteps = songSource
+      ? splitTopLevel(songSource, "comma").flatMap((item) => expandSequenceExpression(item.trim(), sectionEnv))
+      : [];
+
+    const syntheticTracks = normalizeSections(sectionDefs, songSteps, sectionEnv);
+
+    // Also parse any explicit track { } blocks in the same file
+    const explicitTracks = trackBlocks.map((trackBlock, trackIndex) => {
+      const trackScope = extractLetBindings(trackBlock.body, topLevel.env);
+      const segments = sequenceStepsFromSource(trackScope.source, trackScope.env).map((step, stepIndex) => {
+        const { base: stepSrc, conds: stepConds } = parseCondition(step.source);
+        const stepDef = { start: stepIndex, duration: 1 };
+        const allEvents = stepSrc ? scaleSequenceEvents(parseSource(stepSrc, { allowEmpty: true, parentConds: stepConds }), stepDef, trackBlock.name) : [];
+        const events = step.pass !== undefined
+          ? allEvents.filter((e) => evalCondition(e.conds, step.pass))
+          : allEvents;
+        return { ...stepDef, source: step.source, label: step.label, name: step.label || `seq-${stepIndex + 1}`, events };
+      });
+      return { name: trackBlock.name || `track-${trackIndex + 1}`, segments, events: segments.flatMap((s) => s.events) };
+    });
+
+    const allTracks = [...syntheticTracks, ...explicitTracks];
+    return {
+      totalLength: Math.max(1, ...allTracks.flatMap((t) => t.segments.map((s) => s.start + s.duration))),
+      tracks: allTracks
+    };
+  }
 
   if (!trackBlocks.length) {
-    const steps = sequenceStepsFromSource(topLevel.source, topLevel.env);
+    const steps = sequenceStepsFromSource(afterSong, topLevel.env);
     const segments = steps.map((step, index) => {
       const { base: stepSrc, conds: stepConds } = parseCondition(step.source);
       const stepDef = { start: index, duration: 1 };
