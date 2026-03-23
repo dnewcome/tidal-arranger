@@ -49,6 +49,85 @@ These are well-defined and a natural next step after MIDI export.
 - `midichan` override per voice or CC track
 - Patterned `ccn` (multiple CC controllers in one voice expression)
 
+## Section-Oriented Authoring
+
+### The problem with track-first organization
+
+In the current model, the arrangement is written track-first: each `track` block owns its full timeline. For a 4-track, 8-section song this means writing eight separate `seqP` lines across four track blocks — the song structure (intro, verse, chorus, bridge…) is implicit and scattered. Adding or reordering a section requires editing every track in parallel.
+
+Section-oriented authoring inverts this: each `section` block describes *all* the tracks for that section. The song structure is explicit in one place. This is how most DAW arrangers work — horizontal rows are sections, vertical columns are instruments.
+
+### Proposed syntax
+
+Both forms should be supported. The two are equivalent and the parser can normalize either to the same internal track model.
+
+**Track-oriented (current):**
+
+```tidal
+let d_verse = stack [ s "bd cp bd cp", s "hh*8" ]
+let d_chorus = stack [ s "bd*4", s "[hh oh]*4" ]
+
+track drums {
+  seqP [ d_verse.16 d_chorus.16 d_verse.16 d_chorus.16 ]
+}
+track bass {
+  seqP [ b_verse.16 b_chorus.16 b_verse.16 b_chorus.16 ]
+}
+```
+
+**Section-oriented (proposed):**
+
+```tidal
+let verse = section {
+  drums:  stack [ s "bd cp bd cp", s "hh*8" ],
+  bass:   n "c2 ~ g2 ~ f2 ~ g2 ~" # s "bass",
+  chords: stack [ n "c3 ~ a2 ~" # s "pad", n "e3 ~ c3 ~" # s "pad" ],
+  lead:   n "c4 ~ e4 ~ g4 ~ e4 ~" # s "lead"
+}
+
+let chorus = section {
+  drums:  stack [ s "bd*4", s "[hh oh]*4" ],
+  bass:   n "c2 e2 g2 e2 f2 a2 g2 ~" # s "bass",
+  chords: stack [ n "c3 c3 f2 ~" # s "keys", n "e3 e3 a2 ~" # s "keys" ],
+  lead:   n "c5 b4 a4 g4 e4 ~ c4 e4" # s "lead"
+}
+
+song [
+  intro.8 verse.16 chorus.16 verse.16 chorus.16 bridge.16 verse.16 chorus.16 outro.8
+]
+```
+
+The `song [...]` line uses the same sequence expression syntax as `seqP` — `.N` repetition, space-separated references, parenthesized groups all work.
+
+### Parser normalization
+
+The section-oriented form transposes to track-oriented before arrangement parsing:
+
+1. Collect all `section` blocks; record each `trackname: pattern` assignment.
+2. Parse the `song [...]` line into an ordered sequence of section references with counts.
+3. For each unique track name found across all sections, synthesize a `track` block containing a `seqP` with the section patterns in order.
+4. If a section omits a track that other sections define, insert silence (`~ ~ ~ ~`) for that track in that slot so timing stays aligned.
+5. Pass the synthesized track blocks to the existing arrangement parser unchanged.
+
+Nothing downstream — rendering, playback, MIDI export — changes. The section form is purely a front-end authoring syntax.
+
+### Design decisions before building
+
+- **`song` required or optional?** If omitted, sections render in source order. This makes quick sketches possible without a separate `song` line.
+- **Omitted tracks.** A section that doesn't define a track fills that slot with rest events equal in duration to the section length. The track still appears in the arrangement view.
+- **Mixed usage.** A file can contain both `track` blocks and `section` blocks. The `track` blocks are added directly; `section` + `song` blocks are normalized and merged in. Track names that appear in both are combined in timeline order (sections resolve first, tracks appended after, or vice versa — needs a decision).
+- **Nested let bindings in sections.** A section block should respect `let` bindings defined above it in the same scope, consistent with how `track` blocks work today.
+
+### Implementation sketch
+
+New parser entry points in `parser.js`:
+
+- `parseSectionBlock(src)` → `{ name, tracks: Map<string, patternExpr> }`
+- `parseSongLine(src)` → sequence expression (same as `seqP` item expansion)
+- `normalizeSections(sections, songOrder, bindings)` → array of standard track objects, ready for `parseArrangement`
+
+The normalization step is where the transpose happens. It is a pure data transformation with no rendering dependencies, so it can be tested independently.
+
 ## Parser Strategy: Roll Our Own vs. Adopt an Existing Implementation
 
 The current parser is hand-rolled and covers a useful subset of Tidal mini-notation. It works well for the features implemented so far, but it will hit limits as the language grows. Each new combinator or edge case requires careful regex surgery and bracket-depth accounting. The question is whether to keep extending it or to replace it with a real parser.
