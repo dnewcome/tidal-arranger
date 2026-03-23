@@ -517,14 +517,16 @@ export function expandSequenceExpression(expression, env = {}) {
     return env[condBase].map((step) => ({ ...step, source: step.source + suffix }));
   }
 
-  // .N repetition suffix: expr.N → N copies of expr
-  // Works on any base: verse.3, (verse.3 chorus).4, (cat [a,b]).2
+  // .N repetition suffix: expr.N → N copies of expr, each stamped with pass: 1..N
+  // Pass counts reset per phrase (reset-per-phrase semantics): inner recurrences are
+  // self-contained — the outer cycle index does not accumulate into inner pass counts.
   const dotRepeatMatch = trimmed.match(/^([\s\S]+)\.(\d+)$/);
   if (dotRepeatMatch) {
     const base = expandSequenceExpression(dotRepeatMatch[1].trim(), env);
     const count = Number.parseInt(dotRepeatMatch[2], 10);
     const result = [];
-    for (let i = 0; i < count; i += 1) result.push(...base);
+    for (let i = 0; i < count; i += 1)
+      result.push(...base.map((step) => ({ ...step, pass: i + 1 })));
     return result;
   }
 
@@ -536,7 +538,8 @@ export function expandSequenceExpression(expression, env = {}) {
     const count = Number.parseInt(replicateMatch[1], 10);
     const expanded = expandSequenceExpression(replicateMatch[2].trim(), env);
     const repeated = [];
-    for (let i = 0; i < count; i += 1) repeated.push(...expanded);
+    for (let i = 0; i < count; i += 1)
+      repeated.push(...expanded.map((step) => ({ ...step, pass: i + 1 })));
     return repeated;
   }
 
@@ -662,11 +665,13 @@ export function parseArrangement(source) {
     const steps = sequenceStepsFromSource(topLevel.source, topLevel.env);
     const segments = steps.map((step, index) => {
       const { base: stepSrc, conds: stepConds } = parseCondition(step.source);
+      const passCount = step.pass ?? 1;
       const stepDef = { start: index, duration: 1 };
-      return {
-        ...stepDef, source: step.source, label: step.label, name: step.label || `seq-${index + 1}`,
-        events: scaleSequenceEvents(parseSource(stepSrc, { allowEmpty: true, parentConds: stepConds }), stepDef, "track-1")
-      };
+      // AOT condition evaluation: filter events whose conditions don't fire on this pass.
+      // Stochastic events (prob) are rolled once here — each Execute commits one universe.
+      const allEvents = scaleSequenceEvents(parseSource(stepSrc, { allowEmpty: true, parentConds: stepConds }), stepDef, "track-1");
+      const events = allEvents.filter((e) => evalCondition(e.conds, passCount));
+      return { ...stepDef, source: step.source, label: step.label, name: step.label || `seq-${index + 1}`, events };
     });
     return {
       totalLength: Math.max(1, segments.length),
@@ -678,11 +683,11 @@ export function parseArrangement(source) {
     const trackScope = extractLetBindings(trackBlock.body, topLevel.env);
     const segments = sequenceStepsFromSource(trackScope.source, trackScope.env).map((step, stepIndex) => {
       const { base: stepSrc, conds: stepConds } = parseCondition(step.source);
+      const passCount = step.pass ?? 1;
       const stepDef = { start: stepIndex, duration: 1 };
-      return {
-        ...stepDef, source: step.source, label: step.label, name: step.label || `seq-${stepIndex + 1}`,
-        events: stepSrc ? scaleSequenceEvents(parseSource(stepSrc, { allowEmpty: true, parentConds: stepConds }), stepDef, trackBlock.name) : []
-      };
+      const allEvents = stepSrc ? scaleSequenceEvents(parseSource(stepSrc, { allowEmpty: true, parentConds: stepConds }), stepDef, trackBlock.name) : [];
+      const events = allEvents.filter((e) => evalCondition(e.conds, passCount));
+      return { ...stepDef, source: step.source, label: step.label, name: step.label || `seq-${stepIndex + 1}`, events };
     });
     return {
       name: trackBlock.name || `track-${trackIndex + 1}`,

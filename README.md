@@ -605,9 +605,15 @@ Conditions can be applied at any level of the pattern hierarchy:
 | Step | `stack [...]!2:` | entire seqP step from pass 2 onward |
 | Let binding ref | `verse!2` | named pattern every 2nd pass |
 
-#### Where conditions are supported
+#### Ahead-of-time evaluation in the arrangement view
 
-Trig conditions work in the **Pattern Explorer** (`explore.html`), where playheads carry pass counters and the piano roll shows conditional notes as hatched/dimmed until they fire. In the main **Arrangement View** (`index.html`) all conditions are currently ignored — events render and play unconditionally. Full condition support in the arrangement view is planned.
+In the **Arrangement View** (`index.html`), trig conditions are evaluated **ahead of time** when you press Execute. The full timeline is computed once: pass-count conditions are checked, and stochastic `?P` events have their dice rolled then and there. The result is a committed, deterministic event list — what you see in the piano roll is one realized version of the arrangement.
+
+Each time you press Execute you get a new roll for any stochastic events. This is intentional: Execute is how you explore different stochastic outcomes and keep the one you want.
+
+Pass counts are derived from the `.N` repetition context. In `verse.16`, the 16 segments are passes 1–16, so `crash!8` fires only on segments 8 and 16. Pass counts **reset per phrase** — in `(verse.3 chorus).4`, verse always sees passes 1, 2, 3 regardless of which outer repetition it is in.
+
+In the **Pattern Explorer** (`explore.html`), conditions are evaluated JIT per playhead pass at play time, and probabilistic events flicker live.
 
 ### 19. Segment Labels
 

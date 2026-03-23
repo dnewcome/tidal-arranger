@@ -258,6 +258,52 @@ All of these annotations can be represented as decorators on S-expression leaf n
 
 This is clean because the base note is unmodified — the decorators are pure metadata visible to the evaluation engine. A simple evaluator that ignores all decorators produces a dense, always-on version. A full evaluator applies each decorator in order. The S-expression representation makes it easy to strip, add, or transform decorators with rewrite rules.
 
+## Ahead-of-Time Condition Evaluation and Pass Counting
+
+### The core distinction from Tidal
+
+Tidal evaluates patterns lazily in real time — each cycle is computed as the clock reaches it, and stochastic events (probability gates, random choices) are rolled fresh on each pass. You cannot see the "future" of a Tidal pattern without playing it.
+
+This project takes the opposite approach in the arranger: patterns are evaluated **ahead of time**, before playback begins. The full timeline is computed once when you press Execute, stochastic dice rolls happen during that render pass, and the result is a committed, deterministic event list. This is what makes the piano-roll visualization possible — you are looking at a rasterized future, not a live stream.
+
+The tradeoff is that stochastic events have no single "true" future — each render produces a different realization. This is a feature, not a bug. Pressing Execute is equivalent to rolling the dice and choosing one universe to inhabit. If you want a different stochastic outcome, you press Execute again. The arrangement you export to MIDI is always the committed version.
+
+The pattern explorer (`explore.html`) takes the opposite approach: conditions are evaluated JIT per playhead pass, probabilistic events flicker on and off, and the visualization shows the live state of the pattern. Both views are useful; they answer different questions.
+
+### Pass count threading
+
+For AOT condition evaluation to work, the renderer needs to know which **repetition** of a named pattern each segment is. When `.N` expands `verse.16`, the 16 resulting segments are repetitions 1 through 16 of `verse`. A `crash!8` condition inside `verse` should fire on segments 8 and 16 — the 8th and 16th repetition.
+
+The pass count is tracked as a `pass` field on step objects produced by `expandSequenceExpression`. The `.N` and `replicate` operators stamp each repetition with its 1-based index. Steps that don't come from a repetition context get `pass: 1`.
+
+**Reset-per-phrase semantics**: pass counts reset at each `.N` boundary. In `(verse.3 chorus).4`, the outer `.4` creates 4 repetitions of the phrase. Within each phrase repetition, `verse.3` creates its own passes 1, 2, 3. The verse pattern inside the second outer repetition still sees passes 1, 2, 3 — not 4, 5, 6. This is the right musical behavior: the inner recurrence structure is self-contained and does not need to know which outer cycle it is in.
+
+Accumulated pass counting (where verse in the second outer cycle would see passes 4, 5, 6) would be a different and sometimes useful mode. A future "bake" operator could collapse one level of recurrence into a flat sequence that then accumulates pass counts into the outer cycle — similar to Tidal's `mask` which applies a Boolean pattern to gate another pattern's events.
+
+### Stochastic visualization and the parallel universes problem
+
+In the arranger, stochastic events collapse to a single committed timeline at render. In the explorer, they remain undetermined until a playhead pass fires them. A third mode — not yet implemented — would show the **probability distribution** across realizations rather than any single one:
+
+- `?P` events could be rendered at opacity `P` — visually present but semi-transparent, indicating uncertainty
+- K sample runs could be overlaid to show the range of possible outcomes (color density = frequency)
+- A pass-matrix view (time-within-pass × pass-number, 2D grid) would show which conditions fire on which passes, with stochastic events shown as gradient cells
+
+This is most useful in the explorer as a "preview all futures at once" mode. The arranger's AOT model is incompatible with this — once you've committed a timeline, there is only one universe.
+
+### Future: baking and outer-cycle operations
+
+The reset-per-phrase semantics described above means inner recurrences are opaque to the outer cycle. A future `bake` operator would "flatten" one level of recurrence, converting pass-conditional events into a fully expanded sequence. After baking, a new outer recurrence could reference the baked result and apply fresh conditions to it — similar to how Tidal's `mask` applies a pattern of Booleans over another pattern's output.
+
+```tidal
+-- hypothetical syntax:
+let verse_expanded = bake verse.8    -- evaluates 8 passes of verse, commits them
+seqP [
+  (verse_expanded chorus).4!>2       -- outer condition on the baked result
+]
+```
+
+This gives you a two-level recurrence structure where the inner and outer cycles can carry independent condition clocks. Without `bake`, the inner pass count is always local; with `bake`, the inner structure is frozen and only the outer structure counts.
+
 ## Homoiconic Intermediate Representation
 
 The idea: define an S-expression intermediate language (IL) that sits between the terse human-writable tidal surface syntax and the runtime event model. Pattern expressions would be writable tersely as tidal notation, transpiled to S-expressions for storage, manipulation, and rewriting, and optionally pretty-printed back to something approximating the original tidal notation.
